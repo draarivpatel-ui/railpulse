@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "RailPulse"
+abstract: >-
+  A zero-dependency rail service reliability and graphic timetable workbench.
+  Parses GTFS static archives locally and computes Marey time-distance
+  stringlines, headway coefficient of variation, vehicle bunching rates, excess
+  passenger wait time, and downstream delay propagation.
+type: software
+license: MIT
+repository-code: "https://github.com/draarivpatel-ui/railpulse"
+url: "https://draarivpatel-ui.github.io/railpulse/"
+keywords:
+  - rail
+  - gtfs
+  - transit
+  - timetable
+  - reliability
+  - stringline
+  - javascript
+  - zero-dependency
+authors:
+  - family-names: "Patel"
+    given-names: "Aariv"
+    alias: "draarivpatel-ui"
+preferred-citation:
+  type: software
+  title: "RailPulse"
+  version: "1.0.0"
+  date-released: "2026-11-08"
+  license: MIT
+  url: "https://draarivpatel-ui.github.io/railpulse/"
+  authors:
+    - family-names: "Patel"
+      given-names: "Aariv"
+      alias: "draarivpatel-ui"
