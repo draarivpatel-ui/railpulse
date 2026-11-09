@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RailPulse - Rail service reliability analytics</title>
-  <meta name="description" content="RailPulse analyzes GTFS timetables and realtime feeds for headway regularity, train bunching, dwell and delay. Offline, dependency free, in your browser.">
+  <title>RailPulse | Graphic Timetable and Headway Dispatch Workbench</title>
+  <meta name="description" content="RailPulse parses GTFS static timetables and realtime feeds to plot Marey stringline diagrams, headway regularity, vehicle bunching, station dwell, and cascade delay offline in your browser.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,44 +12,46 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="26" height="26" fill="none">
-            <rect x="2" y="2" width="28" height="28" rx="7" stroke="currentColor" stroke-width="2"/>
-            <path d="M7 20h4l3-8 3 12 3-7h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
+            <circle cx="16" cy="16" r="13.5" stroke="currentColor" stroke-width="2.2"/>
+            <line x1="16" y1="5" x2="16" y2="16" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
+            <line x1="16" y1="16" x2="23" y2="21" stroke="#C8102E" stroke-width="2.4" stroke-linecap=" round"/>
+            <circle cx="16" cy="16" r="2.4" fill="#C8102E"/>
           </svg>
         </span>
-        <div>
+        <div class="brand-copy">
           <h1>RailPulse</h1>
-          <p class="tagline">Rail service reliability analytics</p>
+          <p class="tagline">Graphic timetable, headway regularity, and bunching dispatch desk</p>
         </div>
       </div>
       <div class="topbar-actions">
-        <span class="badge" id="sourceBadge">Preloaded demo data</span>
-        <button id="themeToggle" class="btn ghost" type="button" aria-label="Toggle color theme">Light mode</button>
-        <a class="btn ghost" href="https://github.com/draarivpatel-ui/railpulse" target="_blank" rel="noopener">GitHub</a>
+        <span class="badge" id="sourceBadge">Preloaded corridor timetable</span>
+        <button id="themeToggle" class="btn ghost" type="button" aria-label="Toggle color theme">Dark desk</button>
+        <a class="btn ghost" href="https://github.com/draarivpatel-ui/railpulse" target="_blank" rel="noopener">Source repository</a>
       </div>
     </header>
 
-    <!-- One filter row scoping everything below it. -->
-    <section class="controls" aria-label="Analysis controls">
+    <!-- Single dispatch control bar scoping all diagrams and tables below -->
+    <section class="controls" aria-label="Dispatch controls">
       <label class="control">
-        <span class="control-label">Corridor / route</span>
+        <span class="control-label">Corridor and route</span>
         <select id="serviceSelect"></select>
       </label>
       <label class="control">
-        <span class="control-label">Data layer</span>
+        <span class="control-label">Operating layer</span>
         <select id="layerSelect">
           <option value="simulated">Simulated realtime</option>
-          <option value="scheduled">Scheduled only</option>
+          <option value="scheduled">Scheduled timetable only</option>
         </select>
       </label>
       <label class="control">
-        <span class="control-label">Disruption</span>
+        <span class="control-label">Disruption regime</span>
         <select id="intensitySelect">
-          <option value="0">None</option>
-          <option value="0.6">Light</option>
-          <option value="1" selected>Normal</option>
-          <option value="1.8">Heavy</option>
-          <option value="2.8">Severe</option>
+          <option value="0">None (0.0x)</option>
+          <option value="0.6">Light (0.6x)</option>
+          <option value="1" selected>Normal (1.0x)</option>
+          <option value="1.8">Heavy (1.8x)</option>
+          <option value="2.8">Severe (2.8x)</option>
         </select>
       </label>
       <label class="control">
@@ -60,33 +62,35 @@
         <span class="control-label">Service date (YYYYMMDD)</span>
         <input id="dateInput" type="text" inputmode="numeric" placeholder="auto" maxlength="8">
       </label>
-      <button id="demoReset" class="btn ghost" type="button">Reset to demo</button>
+      <button id="demoReset" class="btn ghost" type="button">Reset timetable</button>
     </section>
 
     <p id="feedNotice" class="feed-notice" hidden></p>
 
     <main>
-      <!-- Hero + KPI row -->
-      <section class="overview" aria-label="Overview">
+      <!-- Dispatch summary ledger -->
+      <section class="overview" aria-label="Dispatch summary ledger">
         <div class="hero card">
-          <p class="eyebrow">Service reliability score</p>
-          <div class="hero-figure" id="heroScore">--</div>
-          <p class="hero-sub" id="heroSub">Loading analysis</p>
-          <div class="grade-row" id="gradeRow"></div>
+          <p class="ledger-heading">Service reliability index</p>
+          <div class="hero-row">
+            <div class="hero-figure" id="heroScore">--</div>
+            <div class="grade-row" id="gradeRow"></div>
+          </div>
+          <p class="hero-sub" id="heroSub">Loading timetable analysis</p>
         </div>
         <div class="kpis">
           <div class="card stat">
-            <p class="stat-label">Planned headway</p>
+            <p class="stat-label">Mean observed headway</p>
             <p class="stat-value" id="kpiHeadway">--</p>
             <p class="stat-foot" id="kpiHeadwayFoot">&nbsp;</p>
           </div>
           <div class="card stat">
-            <p class="stat-label">Bunching rate</p>
+            <p class="stat-label">Vehicle bunching rate</p>
             <p class="stat-value" id="kpiBunch">--</p>
             <p class="stat-foot" id="kpiBunchFoot">&nbsp;</p>
           </div>
           <div class="card stat">
-            <p class="stat-label">Excess wait time</p>
+            <p class="stat-label">Excess passenger wait</p>
             <p class="stat-value" id="kpiEwt">--</p>
             <p class="stat-foot" id="kpiEwtFoot">&nbsp;</p>
           </div>
@@ -98,80 +102,77 @@
         </div>
       </section>
 
-      <p class="disclosure" id="dataDisclosure">
-        Preloaded corridors use synthetic, regular-interval timetables for offline
-        analysis. Headway, dwell and delay figures below are illustrative. Upload
-        a real GTFS static feed to replace them with observed schedules.
-      </p>
-
-      <!-- Corridor geography map -->
-      <section class="card chart-card" aria-label="Corridor map">
+      <!-- Primary centerpiece: Marey graphic timetable -->
+      <section class="card chart-card primary-sheet" aria-label="Marey graphic timetable">
         <div class="chart-head">
           <div>
-            <h2>Corridor map</h2>
-            <p class="chart-sub" id="mapSub">Station positions are approximate, interpolated along published route geometry.</p>
-          </div>
-        </div>
-        <div class="map-wrap">
-          <svg id="corridorMap" viewBox="0 0 900 260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Corridor station map"></svg>
-        </div>
-        <p class="chart-note">Color encodes mean delay at each station (blue: early or on time, red: late). Marker size is proportional to planned dwell.</p>
-      </section>
-
-      <!-- Headway distribution -->
-      <section class="card chart-card" aria-label="Headway distribution">
-        <div class="chart-head">
-          <div>
-            <h2>Headway distribution</h2>
-            <p class="chart-sub">Observed gaps between consecutive trains as a multiple of the planned headway.</p>
-          </div>
-          <div class="chart-tools">
-            <span class="legend" id="hwLegend"></span>
-            <button class="btn tiny toggle-table" type="button" data-table="hwTable">Table</button>
-          </div>
-        </div>
-        <div class="plot-wrap"><svg id="headwayChart" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headway distribution histogram"></svg></div>
-        <div class="table-view" id="hwTable" hidden></div>
-      </section>
-
-      <!-- Headway by time of day -->
-      <section class="card chart-card" aria-label="Headway by time of day">
-        <div class="chart-head">
-          <div>
-            <h2>Headway by time of day</h2>
-            <p class="chart-sub">Mean and 90th-percentile headway per hour, against the planned headway.</p>
-          </div>
-          <div class="chart-tools">
-            <span class="legend" id="todLegend"></span>
-            <button class="btn tiny toggle-table" type="button" data-table="todTable">Table</button>
-          </div>
-        </div>
-        <div class="plot-wrap"><svg id="todChart" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headway by time of day"></svg></div>
-        <div class="table-view" id="todTable" hidden></div>
-      </section>
-
-      <!-- Stringline -->
-      <section class="card chart-card" aria-label="Stringline diagram">
-        <div class="chart-head">
-          <div>
-            <h2>Stringline (Marey) diagram</h2>
-            <p class="chart-sub">Each line is one train. Time runs left to right, distance bottom to top. Lines that converge or cross reveal bunching.</p>
+            <h2>Marey graphic timetable (time-distance stringline)</h2>
+            <p class="chart-sub">Horizontal rules mark stations by cumulative route milepost. Sloped traces follow individual trains across the service day. Converging trajectories indicate vehicle bunching and overtakes.</p>
           </div>
           <div class="chart-tools">
             <span class="legend" id="slLegend"></span>
           </div>
         </div>
-        <div class="plot-wrap tall"><svg id="stringlineChart" viewBox="0 0 900 440" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Stringline diagram"></svg></div>
-        <p class="chart-note">Dashed gray lines are the scheduled paths; colored lines are the observed or simulated trains.</p>
+        <div class="plot-wrap tall">
+          <svg id="stringlineChart" viewBox="0 0 980 480" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Marey stringline graphic timetable"></svg>
+        </div>
+        <p class="chart-note">Dashed charcoal traces represent scheduled paths; solid colored traces represent observed or simulated runs encoded by terminal arrival delay. Station codes and mileposts are indexed directly on the vertical axes.</p>
       </section>
+
+      <!-- Corridor geography and station delay strip -->
+      <section class="card chart-card" aria-label="Corridor alignment and station dwell">
+        <div class="chart-head">
+          <div>
+            <h2>Corridor alignment and station delay</h2>
+            <p class="chart-sub" id="mapSub">Station coordinates interpolated along published route geometry.</p>
+          </div>
+        </div>
+        <div class="map-wrap">
+          <svg id="corridorMap" viewBox="0 0 980 240" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Corridor station alignment"></svg>
+        </div>
+        <p class="chart-note">Station marker color encodes mean arrival delay (blue: early or on schedule, red: delayed). Marker radius scales with scheduled station dwell.</p>
+      </section>
+
+      <!-- Two-column analytical pair: Headway distribution + Time of day profile -->
+      <div class="two-col">
+        <section class="card chart-card" aria-label="Headway distribution">
+          <div class="chart-head">
+            <div>
+              <h2>Headway ratio distribution</h2>
+              <p class="chart-sub">Observed inter-train gaps normalized by scheduled headway (bunching &le; 0.5x, gap &ge; 1.5x).</p>
+            </div>
+            <div class="chart-tools">
+              <span class="legend" id="hwLegend"></span>
+              <button class="btn tiny toggle-table" type="button" data-table="hwTable">Table</button>
+            </div>
+          </div>
+          <div class="plot-wrap"><svg id="headwayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headway distribution histogram"></svg></div>
+          <div class="table-view" id="hwTable" hidden></div>
+        </section>
+
+        <section class="card chart-card" aria-label="Headway by time of day">
+          <div class="chart-head">
+            <div>
+              <h2>Hourly headway profile</h2>
+              <p class="chart-sub">Mean and 90th-percentile headway by hour of day compared against scheduled headway.</p>
+            </div>
+            <div class="chart-tools">
+              <span class="legend" id="todLegend"></span>
+              <button class="btn tiny toggle-table" type="button" data-table="todTable">Table</button>
+            </div>
+          </div>
+          <div class="plot-wrap"><svg id="todChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headway by time of day"></svg></div>
+          <div class="table-view" id="todTable" hidden></div>
+        </section>
+      </div>
 
       <!-- Dwell + delay by station -->
       <div class="two-col">
         <section class="card chart-card" aria-label="Dwell by station">
           <div class="chart-head">
             <div>
-              <h2>Dwell by station</h2>
-              <p class="chart-sub">Mean observed dwell vs planned dwell, largest gaps first.</p>
+              <h2>Station dwell comparison</h2>
+              <p class="chart-sub">Mean observed platform dwell versus scheduled stop duration, ranked by overrun.</p>
             </div>
             <div class="chart-tools">
               <span class="legend" id="dwellLegend"></span>
@@ -184,34 +185,38 @@
         <section class="card chart-card" aria-label="Delay by station">
           <div class="chart-head">
             <div>
-              <h2>Delay along the line</h2>
-              <p class="chart-sub">Mean arrival delay vs schedule at each station, in route order.</p>
+              <h2>Delay progression along route</h2>
+              <p class="chart-sub">Mean arrival offset from schedule at each station ordered by cumulative milepost.</p>
             </div>
             <div class="chart-tools">
               <span class="legend" id="delayLegend"></span>
               <button class="btn tiny toggle-table" type="button" data-table="delayTable">Table</button>
             </div>
           </div>
-          <div class="plot-wrap"><svg id="delayChart" viewBox="0 0 460 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Delay along the line"></svg></div>
+          <div class="plot-wrap"><svg id="delayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Delay along the line"></svg></div>
           <div class="table-view" id="delayTable" hidden></div>
         </section>
       </div>
 
-      <!-- Bunching events -->
+      <!-- Bunching and gap ledger -->
       <section class="card chart-card" aria-label="Bunching events">
         <div class="chart-head">
           <div>
-            <h2>Bunching and gap events</h2>
-            <p class="chart-sub">The most severe short headways (bunches) and long headways (gaps) observed across all stops.</p>
+            <h2>Bunching and service gap log</h2>
+            <p class="chart-sub">Most severe compressed headways (bunches) and extended headways (gaps) recorded across all stations.</p>
           </div>
-          <button class="btn tiny toggle-table" type="button" data-table="eventTable">Table</button>
+          <button class="btn tiny toggle-table" type="button" data-table="eventTable">Hide table</button>
         </div>
         <div class="table-view always" id="eventTable"></div>
       </section>
+
+      <p class="disclosure" id="dataDisclosure">
+        Preloaded corridors use regular-interval synthetic timetables over published station mileposts for offline inspection. Upload any GTFS static archive (.zip or CSV) to compute schedules and reliability metrics from agency feed files.
+      </p>
     </main>
 
     <footer class="footer">
-      <p>RailPulse runs entirely in your browser. No accounts, no network calls, no tracking. GTFS feeds never leave your device.</p>
+      <p>RailPulse executes locally in your browser with zero external dependencies and zero network requests. GTFS feed archives never leave your machine.</p>
       <p class="provenance" id="provenance"></p>
     </footer>
   </div>
