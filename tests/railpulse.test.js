@@ -11,8 +11,6 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const zlib = require("node:zlib");
 
 // Load the corridor bundle onto globalThis.RailPulse, then the engine.
@@ -235,6 +233,8 @@ test("interpolateStationCoordinates returns one coordinate per station", () => {
   assert.equal(coords.length, 3);
   assert.ok(Math.abs(coords[0][0] - 41.88) < 1e-6);
   assert.ok(Math.abs(coords[2][0] - 41.81) < 1e-6);
+  const offset = E.interpolateStationCoordinates([[41.88, -87.63], [41.81, -87.62]], [["A", "A", 20], ["B", "B", 30]]);
+  assert.equal(offset[0][0], 41.88); assert.equal(offset[1][0], 41.81);
 });
 
 /* ------------------------------------------------------------------ *
@@ -375,7 +375,7 @@ test("readFeedFiles parses a full GTFS zip into services", async () => {
   assert.equal(parsed.services[0].stops.length, 3);
 });
 
-test("readFeedFiles handles a deflate-compressed zip via DecompressionStream", async () => {
+test("readFeedFiles handles a deflate-compressed zip with the portable decoder", async () => {
   // Build a one-entry deflate (method 8) zip using Node zlib for raw deflate.
   const enc = new TextEncoder();
   const name = "routes.txt";
@@ -498,10 +498,10 @@ test("applyRealtime applies per-stop delays to scheduled trips", () => {
     obs[0].stopTimes[0].arrivalSec - first.stopTimes[0].arrivalSec,
     120
   );
-  // Untouched stops remain on schedule.
+  // A reported delay propagates until another update can safely supersede it.
   assert.equal(
     obs[0].stopTimes[1].arrivalSec,
-    first.stopTimes[1].arrivalSec
+    first.stopTimes[1].arrivalSec + 120
   );
 });
 
@@ -582,7 +582,7 @@ test("buildStringline produces one polyline per trip with a distance axis", () =
   const svc = E.buildSyntheticService(makeCorridor());
   const sl = E.buildStringline(svc);
   assert.equal(sl.lines.length, svc.trips.length);
-  assert.equal(sl.lines[0].points.length, 3);
+  assert.equal(sl.lines[0].points.length, 6);
   assert.equal(sl.milesDomain[0], 0);
   assert.ok(sl.milesDomain[1] > 0);
   assert.ok(sl.timeDomain[1] > sl.timeDomain[0]);
@@ -595,7 +595,7 @@ test("buildStringline includes scheduled ghost lines for observed layers", () =>
   const sl = E.buildStringline(observed, { includeScheduled: true, maxTrips: 5 });
   assert.equal(sl.lines.length, 5);
   assert.ok(sl.scheduledLines);
-  assert.equal(sl.scheduledLines.length, svc.trips.length);
+  assert.equal(sl.scheduledLines.length, 5);
 });
 
 /* ------------------------------------------------------------------ *
@@ -674,3 +674,292 @@ test("every preloaded corridor produces a finite, well-formed report", () => {
     assert.ok(svc.stops.every((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon)), svc.id + " coords");
   }
 });
+
+/* Regression cases for service-day integrity, archive validation and the
+ * shared-platform cascade. All reference quantities are derived in the test. */
+function singleEntryZip(text, options = {}) {
+  const name = options.name || "routes.txt", nameBytes = Buffer.from(name), raw = Buffer.from(text);
+  const method = options.method ?? 8;
+  const compressed = method === 0 ? raw : zlib.deflateRawSync(raw, options.deflate || {});
+  const local = Buffer.alloc(30), cd = Buffer.alloc(46), end = Buffer.alloc(22);
+  const flags = options.descriptor ? 8 : 0, crc = crc32(raw);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(flags, 6); local.writeUInt16LE(method, 8);
+  local.writeUInt32LE(options.descriptor ? 0 : crc, 14); local.writeUInt32LE(options.descriptor ? 0 : compressed.length, 18); local.writeUInt32LE(options.descriptor ? 0 : raw.length, 22); local.writeUInt16LE(nameBytes.length, 26);
+  const descriptor = options.descriptor ? Buffer.alloc(16) : Buffer.alloc(0);
+  if (options.descriptor) { descriptor.writeUInt32LE(0x08074b50, 0); descriptor.writeUInt32LE(crc, 4); descriptor.writeUInt32LE(compressed.length, 8); descriptor.writeUInt32LE(raw.length, 12); }
+  const body = Buffer.concat([local, nameBytes, compressed, descriptor]);
+  cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6); cd.writeUInt16LE(flags, 8); cd.writeUInt16LE(method, 10); cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(compressed.length, 20); cd.writeUInt32LE(raw.length, 24); cd.writeUInt16LE(nameBytes.length, 28);
+  const central = Buffer.concat([cd, nameBytes]);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(central.length, 12); end.writeUInt32LE(body.length, 16);
+  return Buffer.concat([body, central, end]);
+}
+function ab(buffer) { return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength); }
+function centralOffset(buffer) { return buffer.readUInt32LE(buffer.length - 22 + 16); }
+
+test("calendar rejects impossible Gregorian dates and accepts leap day", () => {
+  for (const date of ["20260229", "20261301", "20260431", "20260001", "20261100"]) assert.ok(E.resolveActiveServices(makeGtfsFiles(), date).error, date);
+  assert.equal(E.resolveActiveServices(makeGtfsFiles(), "20240229").error, null);
+});
+test("removed service days stay empty through the full GTFS parser", async () => {
+  const parsed = await E.parseGtfs({ files: makeGtfsFiles(), date: "20261109" });
+  assert.equal(parsed.services.length, 0); assert.equal(parsed.activeServiceCount, 0);
+  assert.match(parsed.warnings.join(" "), /No usable trips/);
+});
+test("calendar_dates-only feeds do not reactivate service on other dates", async () => {
+  const files = makeGtfsFiles(); delete files["calendar.txt"];
+  files["calendar_dates.txt"] = "service_id,date,exception_type\nWK,20261106,1\n";
+  assert.equal((await E.parseGtfs({ files, date: "20261107" })).services.length, 0);
+});
+test("invalid explicit dates and service limits reject instead of falling back", async () => {
+  await assert.rejects(E.parseGtfs({ files: makeGtfsFiles(), date: "20260230" }), /Invalid service date/);
+  await assert.rejects(E.parseGtfs({ files: makeGtfsFiles(), maxServices: -1 }), /maxServices/);
+});
+test("auto date examines a complete calendar week and weights trip counts", async () => {
+  const files = makeGtfsFiles(); delete files["calendar_dates.txt"];
+  files["calendar.txt"] = "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWK,1,0,0,0,0,0,0,20261101,20261130\nWE,0,0,0,0,0,1,1,20261101,20261130\n";
+  const parsed = await E.parseGtfs({ files }); assert.equal(parsed.date, "20261102");
+  files["calendar_dates.txt"] = "service_id,date,exception_type\nWK,20261102,2\n";
+  assert.equal((await E.parseGtfs({ files })).date, "20261109");
+});
+test("CSV rejects malformed quotes, duplicate headers and surplus fields", () => {
+  for (const csv of ['id,name\n1,"missing\n', 'id,name\n1,"closed"extra\n', 'id,name\n1,un"quoted\n', 'id,id\n1,2\n', 'id,name\n1,2,3\n']) assert.throws(() => E.parseCsv(csv), /Invalid CSV/);
+  assert.throws(() => E.splitCsvRow('a,"broken'), /unterminated/);
+  assert.throws(() => E.splitCsvRow('a,"closed"extra'), /Invalid CSV/);
+});
+test("untrusted CSV and GTFS identifiers cannot overwrite object prototypes", async () => {
+  const rows = E.parseCsv("__proto__,constructor\ntext,value\n");
+  assert.equal(rows[0].__proto__, "text"); assert.equal(Object.getPrototypeOf(rows[0]), null);
+  const files = makeGtfsFiles(); files["trips.txt"] = files["trips.txt"].replaceAll("T1", "__proto__"); files["stop_times.txt"] = files["stop_times.txt"].replaceAll("T1", "__proto__");
+  const service = (await E.parseGtfs({ files, date: "20261106" })).services[0];
+  assert.ok(service.trips.some(t => t.tripId === "__proto__"));
+  assert.ok(E.verifyService(service).passed);
+  const special = E.buildSyntheticService(makeCorridor({ stations: [["B|C", "First", 0, 30], ["C", "Last", 2, 30]] }));
+  special.stops.forEach((st, i) => { st.id = i ? "C" : "B|C"; });
+  special.stopIndex = Object.fromEntries(special.stops.map(st => [st.id, st]));
+  special.trips = special.trips.slice(0, 2);
+  special.trips.forEach((t, i) => { t.tripId = i ? "A|B" : "A"; t.stopTimes.forEach((st, j) => { st.stopId = special.stops[j].id; }); });
+  assert.equal(E.analyzeDelay(special).overall.mean, 0);
+});
+test("duplicate GTFS entity ids reject ambiguous feeds", async () => {
+  const files = makeGtfsFiles(); files["stops.txt"] += "S1,004,Duplicate,41.8,-87.6\n";
+  await assert.rejects(E.parseGtfs({ files }), /duplicate stop_id/);
+});
+test("opposite directions and branch stop patterns get coherent services", async () => {
+  const files = makeGtfsFiles();
+  files["trips.txt"] += "R1,WK,IN,Alpha,1\nR1,WK,EXP,Charlie,0\n";
+  files["stop_times.txt"] += "IN,08:00:00,08:00:30,S3,1\nIN,08:10:00,08:10:00,S1,2\nEXP,09:00:00,09:00:30,S1,1\nEXP,09:10:00,09:10:00,S3,2\n";
+  const services = (await E.parseGtfs({ files, date: "20261106" })).services.filter(s => s.routeId === "R1");
+  assert.equal(services.length, 3);
+  assert.ok(services.some(s => s.directionLabel.startsWith("Direction 1")));
+  assert.ok(services.every(s => s.stops.at(-1).miles > 0 && E.verifyService(s).passed));
+});
+test("loop trips retain each distinct visit on a cumulative distance axis", async () => {
+  const files = makeGtfsFiles(); files["trips.txt"] += "R1,WK,LOOP,Alpha,0\n";
+  files["stop_times.txt"] += "LOOP,10:00:00,10:00:30,S1,1\nLOOP,10:05:00,10:05:30,S2,2\nLOOP,10:10:00,10:10:00,S1,3\n";
+  const service = (await E.parseGtfs({ files, date: "20261106" })).services.find(s => s.trips[0].tripId === "LOOP");
+  assert.equal(service.stops.length, 3); assert.notEqual(service.stops[0].id, service.stops[2].id);
+  assert.equal(service.stops[0].gtfsStopId, service.stops[2].gtfsStopId); assert.ok(service.stops[2].miles > service.stops[1].miles);
+  assert.equal(E.analyzeHeadways(service).perStop.length, 3);
+});
+test("unitless shape distances cannot silently change miles", async () => {
+  const files = makeGtfsFiles();
+  files["stop_times.txt"] = files["stop_times.txt"].split("\n").map((line, i) => line ? line + (i === 0 ? ",shape_dist_traveled" : "," + ((i % 3) * 9999 + 5000)) : "").join("\n");
+  const svc = (await E.parseGtfs({ files, date: "20261106" })).services[0];
+  assert.equal(svc.stops[0].miles, 0); assert.ok(svc.stops[1].miles > 2 && svc.stops[1].miles < 2.2);
+  assert.equal(svc.distanceSource, "cumulative haversine estimate");
+});
+test("blank interior times interpolate between timed endpoints, never midnight", async () => {
+  const files = makeGtfsFiles(); files["stop_times.txt"] = files["stop_times.txt"].replace("T1,08:05:00,08:05:30,S2,2", "T1,,,S2,2");
+  const svc = (await E.parseGtfs({ files, date: "20261106" })).services[0], st = svc.trips[0].stopTimes;
+  assert.ok(st[1].arrivalSec > st[0].departureSec && st[1].arrivalSec < st[2].arrivalSec);
+  assert.equal(st[1].arrivalSec, st[1].departureSec);
+});
+test("invalid or untimed endpoint trips produce warnings and are skipped", async () => {
+  const files = makeGtfsFiles(); files["stop_times.txt"] = files["stop_times.txt"].replace("T1,08:00:00,08:00:30", "T1,,").replace("T2,08:15:00,08:15:30", "T2,08:99:00,08:15:30");
+  const p = await E.parseGtfs({ files, date: "20261106" });
+  assert.ok(!p.services[0].trips.some(t => ["T1", "T2"].includes(t.tripId))); assert.equal(p.warnings.filter(w => w.startsWith("Skipping trip")).length, 2);
+});
+test("reverse times, unknown stops and duplicate sequence values are diagnosed", async () => {
+  for (const replacement of ["T1,08:05:00,08:04:00,S2,2", "T1,08:05:00,08:05:30,UNKNOWN,2", "T1,08:05:00,08:05:30,S2,1"]) {
+    const files = makeGtfsFiles(); files["stop_times.txt"] = files["stop_times.txt"].replace("T1,08:05:00,08:05:30,S2,2", replacement);
+    const p = await E.parseGtfs({ files, date: "20261106" }); assert.ok(p.warnings.some(w => w.startsWith("Skipping trip T1:")));
+  }
+});
+test("ZIP extracts empty stored files and data descriptor archives", async () => {
+  assert.equal((await E.readZip(ab(singleEntryZip("", { method: 0 }))))["routes.txt"], "");
+  assert.equal((await E.readZip(ab(singleEntryZip("route_id\nR1\n", { descriptor: true }))))["routes.txt"], "route_id\nR1\n");
+});
+test("portable DEFLATE handles stored, fixed and dynamic blocks with Unicode", async () => {
+  const text = Array.from({ length: 10000 }, (_, i) => "station," + (i % 29) + ",\u00e9\u8eca\n").join("");
+  for (const options of [{ level: 0 }, { strategy: zlib.constants.Z_FIXED }, { level: 9 }]) assert.equal((await E.readZip(ab(singleEntryZip(text, { deflate: options }))))["routes.txt"], text);
+});
+test("ZIP corruption is detected with CRC32 before text reaches the parser", async () => {
+  const zip = singleEntryZip("route_id\nR1\n", { method: 0 }); zip[40] ^= 1;
+  await assert.rejects(E.readZip(ab(zip)), /CRC32 mismatch/);
+});
+test("ZIP rejects missing central directories, bad offsets and truncation", async () => {
+  await assert.rejects(E.readZip(new ArrayBuffer(0)), /Invalid ZIP/);
+  const zip = singleEntryZip("route_id\nR1\n", { method: 0 }); zip.writeUInt32LE(999999, zip.length - 6);
+  await assert.rejects(E.readZip(ab(zip)), /out-of-bounds/);
+  const short = singleEntryZip("route_id\nR1\n").subarray(0, 20);
+  await assert.rejects(E.readZip(ab(short)), /Invalid ZIP/);
+});
+test("ZIP refuses duplicate basenames, encryption and unsupported compression", async () => {
+  await assert.rejects(E.readZip(ab(buildStoreZip({ "a/routes.txt": "a", "b/routes.txt": "b" }))), /duplicate filename/);
+  const encrypted = singleEntryZip("data", { method: 0 }); encrypted.writeUInt16LE(1, centralOffset(encrypted) + 8);
+  await assert.rejects(E.readZip(ab(encrypted)), /encrypted/);
+  const unsupported = singleEntryZip("data", { method: 0 }); unsupported.writeUInt16LE(99, centralOffset(unsupported) + 10);
+  await assert.rejects(E.readZip(ab(unsupported)), /compression method 99/);
+});
+test("ZIP rejects expansion limits and local filename mismatches", async () => {
+  const huge = singleEntryZip("data"); huge.writeUInt32LE(128 * 1024 * 1024 + 1, centralOffset(huge) + 24);
+  await assert.rejects(E.readZip(ab(huge)), /expanded limit/);
+  const name = singleEntryZip("data", { method: 0 }); name[30] = 120;
+  await assert.rejects(E.readZip(ab(name)), /filename mismatch/);
+});
+test("readFeedFiles respects a typed array's actual byte offset and length", async () => {
+  const zip = singleEntryZip("route_id\nR1\n", { descriptor: true }), padded = Buffer.concat([Buffer.from("prefix"), zip, Buffer.from("suffix")]);
+  const view = padded.subarray(6, 6 + zip.length);
+  assert.equal((await E.readFeedFiles(view))["routes.txt"], "route_id\nR1\n");
+});
+test("synthetic builders reject invalid numeric inputs and bound trip allocation", () => {
+  for (const options of [{ headwaySec: 0 }, { headwaySec: -1 }, { startSec: 10, endSec: 9 }, { headwaySec: 0.01 }]) assert.throws(() => E.buildSyntheticService(makeCorridor(), options), /Invalid synthetic|trip limit/);
+  assert.throws(() => E.buildSyntheticService(makeCorridor({ stations: [] })), /at least one station/);
+  assert.throws(() => E.buildSyntheticService(makeCorridor({ speedMph: -1 })), /Invalid synthetic/);
+});
+test("zero disruption is exact and nonzero simulation preserves scheduled run minima", () => {
+  const svc = E.buildSyntheticService(makeCorridor({ startSec: 0, endSec: 3600 }));
+  assert.deepEqual(E.simulateObserved(svc, { intensity: 0 }), svc.trips);
+  for (const t of E.simulateObserved(svc, { seed: 42, intensity: 2.8 })) for (let i = 1; i < t.stopTimes.length; i++) assert.ok(t.stopTimes[i].arrivalSec >= t.stopTimes[i - 1].departureSec);
+  assert.throws(() => E.simulateObserved(svc, { intensity: NaN }), /intensity/);
+});
+test("realtime absolute times win while impossible departures stay monotone", () => {
+  const svc = E.buildSyntheticService(makeCorridor()), first = svc.trips[0].stopTimes[0];
+  const obs = E.applyRealtime(svc, [{ tripId: svc.trips[0].tripId, stopId: first.stopId, arrivalSec: first.arrivalSec + 100, arrivalDelaySec: 9999, departureSec: first.arrivalSec - 10 }]);
+  assert.equal(obs[0].stopTimes[0].arrivalSec, first.arrivalSec + 100);
+  assert.equal(obs[0].stopTimes[0].departureSec, first.arrivalSec + 100);
+  assert.ok(E.verifyService(E.withObserved(svc, obs)).passed);
+});
+test("excess wait uses the population variance of the measured finite headways", () => {
+  const svc = E.buildSyntheticService(makeCorridor({ stations: [["A", "Alpha", 0, 0]] }));
+  svc.trips = [0, 60, 240].map((time, i) => ({ tripId: "W" + i, stopTimes: [{ stopId: svc.stops[0].id, arrivalSec: time, departureSec: time, miles: 0 }], startTime: time }));
+  svc.plannedHeadwaySec = 120;
+  assert.equal(E.populationVariance([60, 180]), 3600);
+  assert.equal(E.analyzeHeadways(svc).excessWaitSec, 15);
+  assert.equal(E.analyzeBunching(svc).excessWaitSec, 15);
+});
+test("after-midnight headway buckets retain their service-day hours", () => {
+  const svc = E.buildSyntheticService(makeCorridor({ startSec: 24 * 3600, endSec: 26 * 3600 }));
+  const labels = E.analyzeHeadways(svc).timeOfDay.map(d => d.label);
+  assert.ok(labels.includes("25:00:00")); assert.ok(!labels.includes("01:00:00"));
+});
+test("headway and stringline option validation rejects invalid dimensions", () => {
+  const svc = E.buildSyntheticService(makeCorridor());
+  assert.throws(() => E.analyzeHeadways(svc, { histogramBins: 0 }), /Invalid headway/);
+  assert.throws(() => E.analyzeHeadways(svc, { timeBucketSec: 0 }), /Invalid headway/);
+  assert.throws(() => E.analyzeBunching(svc, { bunchingThreshold: -1 }), /Invalid bunching/);
+  assert.throws(() => E.buildStringline(svc, { timeRange: [10, 9] }), /Invalid stringline/);
+});
+test("scheduled report options consistently choose the scheduled layer", () => {
+  const svc = E.buildSyntheticService(makeCorridor()), observed = E.withObserved(svc, E.simulateObserved(svc, { seed: 3, intensity: 2.8 }));
+  const report = E.buildReport(observed, { layer: "scheduled" });
+  assert.equal(report.delay.overall.mean, 0); assert.equal(report.headways.overall.cv, 0);
+  assert.equal(report.stringline.layer, "scheduled"); assert.equal(report.stringline.scheduledLines, null);
+  assert.equal(report.score, 100);
+});
+test("large early departures fail a symmetric on-time tolerance", () => {
+  const svc = E.buildSyntheticService(makeCorridor()), obs = svc.trips.map(t => ({ ...t, stopTimes: t.stopTimes.map(st => ({ ...st, arrivalSec: st.arrivalSec - 300, departureSec: st.departureSec - 300 })) }));
+  assert.equal(E.analyzeDelay(E.withObserved(svc, obs)).onTimeRate, 0);
+});
+test("unknown realtime trips are excluded from matched delay denominators", () => {
+  const svc = E.buildSyntheticService(makeCorridor()), extra = { ...svc.trips[0], tripId: "UNKNOWN" };
+  const delay = E.analyzeDelay(E.withObserved(svc, [...svc.trips, extra]));
+  assert.equal(delay.unmatchedObservations, 3); assert.equal(delay.totalObservations, svc.trips.length * 3); assert.equal(delay.onTimeRate, 1);
+});
+test("Marey points show dwell and ghost limits match the selected train ids", () => {
+  const svc = E.buildSyntheticService(makeCorridor()), obs = E.withObserved(svc, E.simulateObserved(svc));
+  const sl = E.buildStringline(obs, { includeScheduled: true, maxTrips: 3 });
+  assert.equal(sl.lines[0].points[0].miles, sl.lines[0].points[1].miles);
+  assert.equal(sl.lines[0].points[1].timeSec - sl.lines[0].points[0].timeSec, obs.observedTrips[0].stopTimes[0].departureSec - obs.observedTrips[0].stopTimes[0].arrivalSec);
+  assert.deepEqual(sl.lines.map(l => l.tripId), sl.scheduledLines.map(l => l.tripId));
+  for (const line of [...sl.lines, ...sl.scheduledLines]) for (const p of line.points) assert.ok(p.timeSec >= sl.timeDomain[0] && p.timeSec <= sl.timeDomain[1]);
+});
+test("Marey window filtering and empty service domains stay finite", () => {
+  const svc = E.buildSyntheticService(makeCorridor());
+  const sl = E.buildStringline(svc, { timeRange: [7 * 3600, 7.5 * 3600] });
+  assert.deepEqual(sl.timeDomain, [7 * 3600, 7.5 * 3600]);
+  assert.ok(sl.lines.every(l => l.points.at(-1).timeSec >= 7 * 3600 && l.points[0].timeSec <= 7.5 * 3600));
+  const empty = E.buildStringline({ ...svc, trips: [] }); assert.deepEqual(empty.timeDomain, [0, 1]);
+});
+test("clean schedules score consistently even when station dwell baselines vary", () => {
+  for (const svc of E.buildAllSyntheticServices()) assert.equal(E.buildReport(svc).score, 100, svc.id);
+});
+test("unplanned dwell is measured when the scheduled baseline is zero", () => {
+  const svc = E.buildSyntheticService(makeCorridor({ stations: [["A", "Alpha", 0, 0]] })), obs = svc.trips.map(t => ({ ...t, stopTimes: t.stopTimes.map(st => ({ ...st, departureSec: st.arrivalSec + 30 })) }));
+  assert.equal(E.analyzeDwell(E.withObserved(svc, obs)).perStop[0].meanDeltaSec, 30);
+  svc.trips[0].stopTimes[0].departureSec += 50;
+  const subset = E.withObserved(svc, [svc.trips[0]]);
+  assert.equal(E.analyzeDwell(subset).perStop[0].meanDeltaSec, 0);
+});
+test("incident cascade preserves shared-platform clearance and all journey order", () => {
+  const svc = E.buildSyntheticService(CORRIDORS.find(c => c.id === "cta-red"), { startSec: 7 * 3600, endSec: 9 * 3600 });
+  const original = JSON.stringify(svc), run = E.simulateCascade(svc, { incidentSec: 900 });
+  assert.equal(JSON.stringify(svc), original); assert.ok(run.delayedTrips > 1);
+  assert.equal(run.maxDelaySec, 900);
+  for (let t = 1; t < run.observedTrips.length; t++) for (let i = 0; i < svc.stops.length; i++) assert.ok(run.observedTrips[t].stopTimes[i].arrivalSec >= run.observedTrips[t - 1].stopTimes[i].departureSec + 45);
+  assert.ok(E.verifyService(E.withObserved(svc, run.observedTrips)).passed);
+});
+test("station holds reduce wait variance with an explicit added delay cost", () => {
+  const svc = E.buildSyntheticService(CORRIDORS.find(c => c.id === "cta-red"), { startSec: 7 * 3600, endSec: 9 * 3600 });
+  const unregulated = E.simulateCascade(svc), regulated = E.simulateCascade(svc, { regulate: true });
+  const a = E.buildReport(E.withObserved(svc, unregulated.observedTrips)), b = E.buildReport(E.withObserved(svc, regulated.observedTrips));
+  assert.ok(b.headways.excessWaitSec < a.headways.excessWaitSec);
+  assert.ok(b.bunching.bunchRate < a.bunching.bunchRate); assert.ok(regulated.holdSec > 0);
+  assert.ok(regulated.totalTerminalDelaySec > unregulated.totalTerminalDelaySec);
+  assert.ok(b.verification.passed);
+});
+test("cascade is deterministic, validates options and recovers a zero-incident baseline", () => {
+  const svc = E.buildSyntheticService(makeCorridor());
+  assert.deepEqual(E.simulateCascade(svc), E.simulateCascade(svc));
+  assert.deepEqual(E.simulateCascade(svc, { incidentSec: 0 }).observedTrips, svc.trips);
+  assert.throws(() => E.simulateCascade(svc, { incidentTripIndex: -1 }), /Invalid incident/);
+  assert.throws(() => E.simulateCascade(svc, { incidentSec: Infinity }), /Invalid incident/);
+});
+test("verification counts actual timestamps and reports invalid journeys", () => {
+  const svc = E.buildSyntheticService(makeCorridor()), check = E.verifyService(svc);
+  assert.ok(check.passed); assert.equal(check.roundTrips, svc.trips.length * svc.stops.length * 2);
+  const invalid = { ...svc, trips: [{ tripId: "BAD", stopTimes: [{ stopId: "missing", arrivalSec: NaN, departureSec: -1, miles: -2 }] }] };
+  assert.equal(E.verifyService(invalid).passed, false); assert.equal(E.verifyService({ ...svc, trips: [] }).passed, false);
+});
+
+test("loose CSV aliases and nested feed maps normalize to GTFS filenames", async () => {
+  const files = makeGtfsFiles(), aliases = Object.fromEntries(Object.entries(files).map(([name, text]) => ["bundle/" + name.replace(".txt", ".csv").toUpperCase(), text]));
+  assert.equal((await E.parseGtfs({ files: aliases, date: "20261106" })).services.length, 2);
+  assert.ok((await E.readFeedFiles(files["stop_times.txt"]))["stop_times.txt"]);
+  await assert.rejects(E.readFeedFiles({ "routes.txt": "a", "ROUTES.csv": "b" }), /Duplicate GTFS filename/);
+});
+test("regulated station holds extend preceding station departure and dwell without inflating hold running time", () => {
+  const svc = E.buildSyntheticService(CORRIDORS.find(c => c.id === "cta-red"), { startSec: 7 * 3600, endSec: 9 * 3600 });
+  const reg = E.simulateCascade(svc, { incidentSec: 900, regulate: true });
+  let dwellAdded = 0;
+  reg.observedTrips.forEach((trip, tIdx) => {
+    const sched = svc.trips[tIdx];
+    trip.stopTimes.forEach((st, i) => {
+      dwellAdded += (st.departureSec - st.arrivalSec) - (sched.stopTimes[i].departureSec - sched.stopTimes[i].arrivalSec);
+    });
+  });
+  assert.equal(reg.holdSec, 1685);
+  assert.equal(dwellAdded, 900 + reg.holdSec);
+});
+test("blank stop_sequence is rejected rather than coerced to zero", async () => {
+  const files = makeGtfsFiles();
+  files["stop_times.txt"] = files["stop_times.txt"].replace(",1\n", ",\n");
+  const parsed = await E.parseGtfs({ files, date: "20261106" });
+  assert.ok(parsed.warnings.some(w => /invalid stop_sequence/.test(w)), String(parsed.warnings));
+  const allBlank = makeGtfsFiles();
+  allBlank["stop_times.txt"] = allBlank["stop_times.txt"].replace(/,1\n/g, ",\n");
+  const none = await E.parseGtfs({ files: allBlank, date: "20261106" });
+  assert.equal(none.services.length, 0);
+  assert.ok(none.warnings.some(w => /invalid stop_sequence/.test(w)), String(none.warnings));
+});
+

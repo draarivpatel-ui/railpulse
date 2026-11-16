@@ -515,3 +515,73 @@ tbody tr:hover { background: var(--wash); }
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .two-col { grid-template-columns: 1fr; }
 }
+
+/* Focused dispatch workspace: the scenario, its consequences, then the evidence. */
+.skip-link { position: absolute; left: 16px; top: -60px; z-index: 100; padding: 12px; background: var(--card); border: 2px solid var(--series-1); color: var(--text-primary); }
+.skip-link:focus { top: 12px; }
+.showcase { display: grid; grid-template-columns: 1fr 1.2fr; gap: 28px; padding: 28px 0 24px; align-items: center; }
+.eyebrow { font: 10px var(--font-mono); letter-spacing: 0.08em; font-weight: 700; color: var(--series-1); margin: 0 0 8px; }
+.showcase h2 { margin: 0 0 10px; font-size: clamp(24px, 3.3vw, 36px); line-height: 1.12; letter-spacing: -0.04em; max-width: 480px; }
+.showcase p:not(.eyebrow) { font-size: 13px; color: var(--text-secondary); margin: 0; max-width: 470px; }
+.presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.preset { position: relative; border: 1px solid var(--border); border-top: 3px solid var(--axis); background: var(--card); text-align: left; color: var(--text-primary); padding: 14px 11px; font: inherit; cursor: pointer; min-height: 106px; }
+.preset strong { display: block; font-size: 12.5px; margin-top: 16px; }
+.preset small { display: block; font-size: 10.5px; margin-top: 4px; color: var(--text-secondary); }
+.preset-number { font: 11px var(--font-mono); color: var(--text-muted); }
+.preset[aria-pressed="true"] { border-color: var(--series-2); border-top-color: var(--series-2); box-shadow: inset 0 0 0 1px var(--series-2); }
+.preset[aria-pressed="true"] .preset-number { color: var(--series-2); }
+.preset:hover { background: var(--surface-1); }
+.preset:focus-visible, select:focus-visible, summary:focus-visible, .hit:focus-visible, .bar-row:focus-visible, .table-view:focus-visible { outline: 2px solid var(--series-1); outline-offset: 3px; }
+.controls { border-top: 1px solid var(--border); }
+.scenario-strip { border: 1px solid var(--border); border-left: 4px solid var(--series-2); background: var(--card); padding: 16px 18px; display: grid; grid-template-columns: 1.1fr 1.2fr; gap: 24px; align-items: center; }
+.scenario-strip p { margin: 6px 0 0; font-size: 12px; color: var(--text-secondary); }
+.comparison { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.comparison small { font-size: 10.5px; color: var(--text-secondary); display: block; }
+.comparison strong { font: 700 22px var(--font-mono); display: block; margin-top: 6px; }
+.verification-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.verification { color: var(--good); font: 11px var(--font-mono); }
+.verification::before { content: "\2713 "; }
+.verification.error { color: var(--critical); }
+.window-control { display: flex; align-items: center; gap: 6px; font: 11px var(--font-mono); }
+.window-control select, .train-inspector select { font: 11px var(--font-mono); background: var(--card); color: var(--text-primary); padding: 6px 8px; border: 1px solid var(--border); min-height: 32px; }
+.train-inspector { margin-top: 12px; padding: 12px 14px; background: var(--surface-1); display: grid; grid-template-columns: auto 1fr; gap: 8px 18px; align-items: center; }
+.train-inspector > label { font: 11px var(--font-mono); display: flex; align-items: center; gap: 8px; }
+.train-inspector > p { font: 11px var(--font-mono); margin: 0; color: var(--text-secondary); }
+.train-inspector details { grid-column: 1 / -1; font-size: 11px; }
+summary { cursor: pointer; font-weight: 600; min-height: 32px; padding: 8px 0; }
+.analytics { padding: 12px 18px; background: var(--card); border: 1px solid var(--border); }
+.analytics > summary { font-size: 13px; }
+.analytics[open] > summary { margin-bottom: 16px; border-bottom: 1px solid var(--grid); }
+.analytics > .two-col { margin-bottom: 16px; }
+.plot-wrap.tall { overflow-x: auto; }
+.plot-wrap.tall svg { min-width: 720px; min-height: 0; }
+[hidden] { display: none !important; }
+:root { --text-muted: #59574f; --warning: #965407; }
+:root[data-theme="dark"] { --text-muted: #aaa79d; --axis: #858278; }
+.btn { min-height: 32px; }
+@media (max-width: 1000px) { .showcase { grid-template-columns: 1fr; gap: 18px; } .showcase h2 { max-width: none; } .scenario-strip { grid-template-columns: 1fr; gap: 16px; } }
+@media (max-width: 600px) {
+  .viz-root { padding: 14px 12px 32px; }
+  .topbar { gap: 12px; }
+  .tagline { max-width: 270px; }
+  .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .control select, .control input[type="text"], .control input[type="file"] { min-height: 40px; }
+  .card { padding: 14px 12px; }
+  .hero-figure { font-size: 44px; }
+  .stat-value { font-size: 23px; }
+  .showcase { padding: 22px 0; }
+  .presets { gap: 6px; }
+  .preset { padding: 10px 8px; }
+  .preset strong { font-size: 11px; }
+  .preset small { font-size: 10px; }
+  .comparison { gap: 8px; }
+  .comparison strong { font-size: 18px; }
+  .train-inspector { grid-template-columns: 1fr; padding: 10px; }
+  .train-inspector details { grid-column: 1; }
+  .bar-row { grid-template-columns: 100px 1fr 48px; gap: 6px; }
+  .analytics { padding: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+
+.brand-mark { width: 32px; flex: none; }
+.brand-mark svg { width: 28px; height: 28px; }

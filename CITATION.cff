@@ -9,7 +9,7 @@ abstract: >-
 type: software
 license: MIT
 repository-code: "https://github.com/draarivpatel-ui/railpulse"
-url: "https://draarivpatel-ui.github.io/railpulse/"
+url: "https://aariv.me/railpulse/"
 keywords:
   - rail
   - gtfs
@@ -29,7 +29,7 @@ preferred-citation:
   version: "1.0.0"
   date-released: "2026-11-08"
   license: MIT
-  url: "https://draarivpatel-ui.github.io/railpulse/"
+  url: "https://aariv.me/railpulse/"
   authors:
     - family-names: "Patel"
       given-names: "Aariv"

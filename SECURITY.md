@@ -4,8 +4,7 @@
 
 Please report suspected security vulnerabilities privately through GitHub's
 private vulnerability reporting, which is available under the repository's
-Security tab. Alternatively, email the maintainer at the address listed in
-`CITATION.cff`.
+Security tab.
 
 Please do not open a public issue for a security problem. We aim to
 acknowledge every report within 5 business days and to provide an assessment
@@ -15,22 +14,22 @@ with a target fix date within 10 business days.
 
 - A description of the vulnerability and its impact
 - The affected file, function, or component
-- Steps to reproduce, including any ROM, assembly source, or input file
+- Steps to reproduce, including the smallest GTFS archive or CSV excerpt
 - The version or commit you tested against
 - Any suggested remediation
 
 ## Scope
 
-Chipper-8 is a client-side emulator and workbench. In scope are:
+RailPulse is a browser timetable parser and dispatch workbench. In scope are:
 
-- Memory safety issues in the CPU core, such as out-of-bounds bus access
-- Assembly parsing bugs that allow arbitrary code execution in Node contexts
+- Malformed ZIP entries that evade archive bounds or expansion limits
+- GTFS CSV parsing or identifier handling defects
 - Cross-site scripting or injection through rendered workbench output
-- Any path where untrusted ROM or assembly bytes influence the DOM
+- Any path where untrusted feed text influences the DOM
 
 Out of scope are:
 
-- Denial of service from an intentionally malformed ROM that only affects the
+- Denial of service from an intentionally malformed feed that only affects the
   local browser tab
 - Issues in third-party dependencies (this project has none)
 - Report of missing hardening features rather than an exploitable defect

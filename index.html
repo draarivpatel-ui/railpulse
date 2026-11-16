@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RailPulse | Graphic Timetable and Headway Dispatch Workbench</title>
-  <meta name="description" content="RailPulse parses GTFS static timetables and realtime feeds to plot Marey stringline diagrams, headway regularity, vehicle bunching, station dwell, and cascade delay offline in your browser.">
+  <meta name="description" content="RailPulse parses GTFS static timetables and reproducible disruption scenarios to plot Marey stringline diagrams, headway regularity, vehicle bunching, station dwell, and cascade delay offline in your browser.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <a class="skip-link" href="#workbench">Skip to dispatch workbench</a>
   <div class="viz-root">
     <header class="topbar">
       <div class="brand">
@@ -15,7 +16,7 @@
           <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
             <circle cx="16" cy="16" r="13.5" stroke="currentColor" stroke-width="2.2"/>
             <line x1="16" y1="5" x2="16" y2="16" stroke="currentColor" stroke-width="2.2" stroke-linecap="square"/>
-            <line x1="16" y1="16" x2="23" y2="21" stroke="#C8102E" stroke-width="2.4" stroke-linecap=" round"/>
+            <line x1="16" y1="16" x2="23" y2="21" stroke="#C8102E" stroke-width="2.4" stroke-linecap="round"/>
             <circle cx="16" cy="16" r="2.4" fill="#C8102E"/>
           </svg>
         </span>
@@ -31,6 +32,19 @@
       </div>
     </header>
 
+    <section class="showcase" aria-labelledby="showcaseHeading">
+      <div>
+        <p class="eyebrow">THE CORRIDOR IS A CONNECTED SYSTEM</p>
+        <h2 id="showcaseHeading">One stopped train. Delays down the line.</h2>
+        <p>Trace a platform incident through the timetable, then restore train spacing. Three scenarios. One click each.</p>
+      </div>
+      <div class="presets" role="group" aria-label="Showcase scenarios">
+        <button class="preset" id="presetSmooth" type="button" data-preset="smooth" aria-pressed="false"><span class="preset-number">1</span><strong>Smooth rush</strong><small>Establish the baseline</small></button>
+        <button class="preset" id="presetIncident" type="button" data-preset="incident" aria-pressed="true"><span class="preset-number">2</span><strong>Platform incident</strong><small>Watch delay cascade</small></button>
+        <button class="preset" id="presetRecovery" type="button" data-preset="recovery" aria-pressed="false"><span class="preset-number">3</span><strong>Recover spacing</strong><small>Compare station holds</small></button>
+      </div>
+    </section>
+
     <!-- Single dispatch control bar scoping all diagrams and tables below -->
     <section class="controls" aria-label="Dispatch controls">
       <label class="control">
@@ -40,7 +54,7 @@
       <label class="control">
         <span class="control-label">Operating layer</span>
         <select id="layerSelect">
-          <option value="simulated">Simulated realtime</option>
+          <option value="simulated">Simulated operations</option>
           <option value="scheduled">Scheduled timetable only</option>
         </select>
       </label>
@@ -65,9 +79,14 @@
       <button id="demoReset" class="btn ghost" type="button">Reset timetable</button>
     </section>
 
-    <p id="feedNotice" class="feed-notice" hidden></p>
+    <p id="feedNotice" class="feed-notice" role="status" aria-live="polite" hidden></p>
 
-    <main>
+    <main id="workbench" tabindex="-1">
+      <section class="scenario-strip" id="scenarioStrip" aria-label="Scenario comparison">
+        <div><span class="eyebrow" id="scenarioName">PLATFORM INCIDENT</span><p id="scenarioNarrative"></p></div>
+        <div class="comparison"><div><small>Unregulated wait penalty</small><strong id="baselineWait">--</strong></div><div><small>With spacing holds</small><strong id="recoveryWait">--</strong></div><div><small>Additional station holds</small><strong id="recoveryCost">--</strong></div></div>
+      </section>
+      <div class="verification-bar"><span class="verification" id="verificationBadge" role="status" aria-live="polite">Checking timetable</span><button class="btn" id="exportReport" type="button">Download dispatch report</button></div>
       <!-- Dispatch summary ledger -->
       <section class="overview" aria-label="Dispatch summary ledger">
         <div class="hero card">
@@ -80,7 +99,7 @@
         </div>
         <div class="kpis">
           <div class="card stat">
-            <p class="stat-label">Mean observed headway</p>
+            <p class="stat-label">Mean train headway</p>
             <p class="stat-value" id="kpiHeadway">--</p>
             <p class="stat-foot" id="kpiHeadwayFoot">&nbsp;</p>
           </div>
@@ -110,13 +129,15 @@
             <p class="chart-sub">Horizontal rules mark stations by cumulative route milepost. Sloped traces follow individual trains across the service day. Converging trajectories indicate vehicle bunching and overtakes.</p>
           </div>
           <div class="chart-tools">
+            <label class="window-control">Time window <select id="timeWindow"><option value="focus">First 26 trains</option><option value="morning">06:00 to 10:00</option><option value="midday">11:00 to 15:00</option><option value="evening">16:00 to 20:00</option><option value="full">Full service day</option></select></label>
             <span class="legend" id="slLegend"></span>
           </div>
         </div>
         <div class="plot-wrap tall">
-          <svg id="stringlineChart" viewBox="0 0 980 480" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Marey stringline graphic timetable"></svg>
+          <svg id="stringlineChart" viewBox="0 0 980 480" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Marey stringline graphic timetable. Focus a train to inspect its journey."></svg>
         </div>
-        <p class="chart-note">Dashed charcoal traces represent scheduled paths; solid colored traces represent observed or simulated runs encoded by terminal arrival delay. Station codes and mileposts are indexed directly on the vertical axes.</p>
+        <div class="train-inspector" aria-label="Train inspector"><label>Inspect train <select id="trainSelect"></select></label><p id="trainReadout" aria-live="polite"></p><details id="trainLedger"><summary>Station timing ledger</summary><div class="table-view" tabindex="0" id="trainTable"></div></details></div>
+        <p class="chart-note" id="stringlineNote">Dashed charcoal traces represent scheduled paths; solid colored traces represent observed or simulated runs encoded by terminal arrival delay. Station codes and mileposts are indexed directly on the vertical axes.</p>
       </section>
 
       <!-- Corridor geography and station delay strip -->
@@ -124,15 +145,16 @@
         <div class="chart-head">
           <div>
             <h2>Corridor alignment and station delay</h2>
-            <p class="chart-sub" id="mapSub">Station coordinates interpolated along published route geometry.</p>
+            <p class="chart-sub" id="mapSub">Approximate station alignment from the selected corridor.</p>
           </div>
         </div>
         <div class="map-wrap">
-          <svg id="corridorMap" viewBox="0 0 980 240" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Corridor station alignment"></svg>
+          <svg id="corridorMap" viewBox="0 0 980 240" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Corridor station alignment"></svg>
         </div>
-        <p class="chart-note">Station marker color encodes mean arrival delay (blue: early or on schedule, red: delayed). Marker radius scales with scheduled station dwell.</p>
+        <p class="chart-note">Station marker color encodes mean arrival delay (neutral: on schedule, blue: early, red: delayed). Marker radius scales with scheduled station dwell.</p>
       </section>
 
+      <details class="analytics"><summary>Explore headways, station dwell, and the event ledger</summary>
       <!-- Two-column analytical pair: Headway distribution + Time of day profile -->
       <div class="two-col">
         <section class="card chart-card" aria-label="Headway distribution">
@@ -146,8 +168,8 @@
               <button class="btn tiny toggle-table" type="button" data-table="hwTable">Table</button>
             </div>
           </div>
-          <div class="plot-wrap"><svg id="headwayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headway distribution histogram"></svg></div>
-          <div class="table-view" id="hwTable" hidden></div>
+          <div class="plot-wrap"><svg id="headwayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Headway distribution histogram"></svg></div>
+          <div class="table-view" tabindex="0" id="hwTable" hidden></div>
         </section>
 
         <section class="card chart-card" aria-label="Headway by time of day">
@@ -161,8 +183,8 @@
               <button class="btn tiny toggle-table" type="button" data-table="todTable">Table</button>
             </div>
           </div>
-          <div class="plot-wrap"><svg id="todChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headway by time of day"></svg></div>
-          <div class="table-view" id="todTable" hidden></div>
+          <div class="plot-wrap"><svg id="todChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Headway by time of day"></svg></div>
+          <div class="table-view" tabindex="0" id="todTable" hidden></div>
         </section>
       </div>
 
@@ -179,8 +201,8 @@
               <button class="btn tiny toggle-table" type="button" data-table="dwellTable">Table</button>
             </div>
           </div>
-          <div class="plot-wrap"><div id="dwellChart" class="bar-list" role="img" aria-label="Dwell by station"></div></div>
-          <div class="table-view" id="dwellTable" hidden></div>
+          <div class="plot-wrap"><div id="dwellChart" class="bar-list" role="group" aria-label="Dwell by station"></div></div>
+          <div class="table-view" tabindex="0" id="dwellTable" hidden></div>
         </section>
         <section class="card chart-card" aria-label="Delay by station">
           <div class="chart-head">
@@ -193,8 +215,8 @@
               <button class="btn tiny toggle-table" type="button" data-table="delayTable">Table</button>
             </div>
           </div>
-          <div class="plot-wrap"><svg id="delayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Delay along the line"></svg></div>
-          <div class="table-view" id="delayTable" hidden></div>
+          <div class="plot-wrap"><svg id="delayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Delay along the line"></svg></div>
+          <div class="table-view" tabindex="0" id="delayTable" hidden></div>
         </section>
       </div>
 
@@ -207,15 +229,17 @@
           </div>
           <button class="btn tiny toggle-table" type="button" data-table="eventTable">Hide table</button>
         </div>
-        <div class="table-view always" id="eventTable"></div>
+        <div class="table-view always" tabindex="0" id="eventTable"></div>
       </section>
 
+      </details>
       <p class="disclosure" id="dataDisclosure">
-        Preloaded corridors use regular-interval synthetic timetables over published station mileposts for offline inspection. Upload any GTFS static archive (.zip or CSV) to compute schedules and reliability metrics from agency feed files.
+        Preloaded corridors use regular-interval synthetic timetables over illustrative station mileposts for offline inspection. Upload any GTFS static archive (.zip or CSV) to compute schedules and reliability metrics from agency feed files.
       </p>
     </main>
 
     <footer class="footer">
+      <p>Keyboard: 1 baseline, 2 incident, 3 recovery. Tab to any chart mark to inspect. Escape closes the tooltip.</p>
       <p>RailPulse executes locally in your browser with zero external dependencies and zero network requests. GTFS feed archives never leave your machine.</p>
       <p class="provenance" id="provenance"></p>
     </footer>

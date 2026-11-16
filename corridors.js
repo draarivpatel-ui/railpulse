@@ -1,27 +1,22 @@
 /* RailPulse preloaded corridor bundle.
  *
- * Station names, station order, operators, route shapes and cumulative route
- * miles are drawn from published timetables, line maps and milepost charts.
- * Approximate WGS84 anchor coordinates trace each real corridor so the SVG map
- * shows the actual geographic shape of the line. Station coordinates are
- * interpolated along those anchors by cumulative route distance, so they are
- * approximate, not survey grade.
- *
- * Headways, dwell times and service spans below are illustrative regular
- * interval timetables, not extracted live schedules. They exist so the headway,
- * bunching, dwell and delay models can run offline with zero dependencies and
- * zero network calls. Upload a real GTFS static bundle or a GTFS-RT feed in the
- * app to replace them with observed data.
+ * Seven named corridor examples provide simplified station sequences,
+ * illustrative mileposts and approximate WGS84 anchor geometry. They are
+ * teaching fixtures, not agency schedules or surveyed infrastructure data.
+ * Station coordinates are interpolated along the anchors by route distance.
+ * Headways, dwell times and service spans are regular-interval assumptions.
+ * Upload a GTFS static bundle for an agency's actual planned stop times.
+ * Observed per-stop updates are available through the engine API.
  */
 (function (root) {
   "use strict";
   var ns = root.RailPulse || (root.RailPulse = {});
 
   var PROVENANCE = [
-    "Amtrak Northeast Corridor: published NEC mileposts, Boston to Washington.",
-    "Houston METRORail: published Red, Green and Purple line station lists.",
-    "Caltrain: published peninsula mileposts, San Francisco to Gilroy.",
-    "CTA L: published Blue Line (O'Hare to Forest Park) and Red Line (Howard to 95th/Dan Ryan) station lists.",
+    "Amtrak Northeast Corridor: illustrative Boston to Washington corridor.",
+    "Houston METRORail: illustrative Red, Green and Purple corridor fixtures.",
+    "Caltrain: illustrative San Francisco to Gilroy corridor.",
+    "CTA L: illustrative Blue Line (O'Hare to Forest Park) and Red Line (Howard to 95th/Dan Ryan) corridor fixtures.",
     "All timetables are synthetic regular interval services for offline analysis."
   ];
 
@@ -99,16 +94,16 @@
         ["SML", "Smith Lands", 1.3, 25],
         ["TMC", "Texas Medical Center", 2.2, 35],
         ["DRY", "Dryden / TMC", 2.7, 25],
-        ["RIC", "Hermann Park / Rice U", 3.3, 25],
+        ["HPK", "Hermann Park", 3.3, 25],
         ["MUS", "Museum District", 3.9, 25],
         ["WHE", "Wheeler", 4.6, 25],
-        ["ENS", "Ensemble / HCC", 5.4, 25],
+        ["ENS", "Ensemble", 5.4, 25],
         ["DTC", "Downtown Transit Center", 6.3, 40],
         ["BEL", "Bell", 7.0, 25],
         ["MSQ", "Main Street Square", 7.5, 30],
         ["CEN", "Central Station", 8.0, 35],
         ["PRE", "Preston", 8.5, 25],
-        ["UHD", "UH Downtown", 9.2, 30],
+        ["DWN", "Downtown North", 9.2, 30],
         ["BUR", "Burnett Transit Center", 9.9, 30],
         ["CAS", "Cass / Intermodal", 10.4, 25],
         ["MOO", "Moody Park", 11.0, 25],
@@ -144,7 +139,7 @@
         ["HWY", "Harrisburg / Wayside", 3.0, 25],
         ["LEE", "Leeland / Third Ward", 3.8, 25],
         ["ELG", "Elgin / Third Ward", 4.4, 30],
-        ["TSU", "TSU / UH Athletics District", 5.0, 25],
+        ["ATH", "Athletics District", 5.0, 25],
         ["EAD", "EaDo / Stadium", 5.7, 30],
         ["CON", "Convention District", 6.4, 25],
         ["CEN", "Central Station", 7.0, 35],
@@ -179,7 +174,7 @@
         ["TIE", "Tierwester / Scott", 2.1, 25],
         ["SCT", "Scott / Holcombe", 2.8, 25],
         ["ELG", "Elgin / Third Ward", 3.6, 30],
-        ["TSU", "TSU / UH Athletics District", 4.2, 25],
+        ["ATH", "Athletics District", 4.2, 25],
         ["EAD", "EaDo / Stadium", 4.9, 30],
         ["CON", "Convention District", 5.6, 25],
         ["CEN", "Central Station", 6.2, 35],
@@ -285,7 +280,7 @@
         ["JCK", "Jackson", 18.8, 35],
         ["LAS", "LaSalle", 19.2, 30],
         ["CLN", "Clinton", 19.7, 35],
-        ["UIC", "UIC Halsted", 20.4, 30],
+        ["HLD", "Halsted", 20.4, 30],
         ["RAC", "Racine", 21.1, 30],
         ["PLK", "Polk", 21.7, 30],
         ["18T", "18th", 22.3, 30],

@@ -19,7 +19,13 @@
     date: null,
     gtfsWarnings: [],
     report: null,
-    workingService: null
+    workingService: null,
+    scenario: "incident",
+    scenarioResult: null,
+    selectedTripId: null,
+    timeWindow: "focus",
+    feedFiles: null,
+    feedRequest: 0
   };
 
   /* ---------------------------------------------------------------- *
@@ -33,6 +39,17 @@
     var node = document.createElementNS(SVGNS, tag);
     setAttrs(node, attrs);
     if (parent) parent.appendChild(node);
+    if (attrs && attrs.class === "hit") {
+      node.setAttribute("tabindex", "0"); node.setAttribute("role", "button");
+      if (!attrs["aria-label"]) node.setAttribute("aria-label", "Inspect chart mark");
+      node.setAttribute("aria-describedby", "tooltip");
+      node.addEventListener("focus", function () { node.dispatchEvent(new Event("pointermove")); });
+      node.addEventListener("blur", function () { node.dispatchEvent(new Event("pointerleave")); });
+      node.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); node.dispatchEvent(new Event("pointermove")); }
+        if (event.key === "Escape") { node.dispatchEvent(new Event("pointerleave")); hideTip(); }
+      });
+    }
     return node;
   }
   function setAttrs(node, attrs) {
@@ -68,8 +85,7 @@
   }
   function fmtClock(sec) {
     if (!isFinite(sec)) return "n/a";
-    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
-    return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+    return E.formatGtfsTime(sec).split(":").slice(0, 2).join(":");
   }
   function fmtPct(x) { return (x * 100).toFixed(1) + "%"; }
   function fmtNum(x, dp) { return Number(x).toFixed(dp == null ? 0 : dp); }
@@ -82,6 +98,10 @@
     tip = tip || $("tooltip");
     clear(tip);
     tip.hidden = false;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      var rect = document.activeElement && document.activeElement.getBoundingClientRect ? document.activeElement.getBoundingClientRect() : { left: 24, top: 24, width: 0, height: 0 };
+      x = rect.left + rect.width / 2; y = rect.top + rect.height / 2;
+    }
     var v = document.createElement("div");
     v.className = "tt-value"; v.textContent = value;
     tip.appendChild(v);
@@ -150,7 +170,7 @@
     var htr = document.createElement("tr");
     spec.columns.forEach(function (c) {
       var th = document.createElement("th");
-      th.textContent = c.label;
+      th.textContent = c.label; th.scope = "col";
       if (c.num) th.style.textAlign = "right";
       htr.appendChild(th);
     });
@@ -189,6 +209,9 @@
 
     // Select a legible subset of stations for direct horizontal rules and labels
     // so dense corridors (33 stops) never collide vertically.
+    var defs = el("defs", {}, svg), clip = el("clipPath", { id: "mareyPlotClip" }, defs);
+    el("rect", { x: padL, y: padT, width: plotW, height: plotH }, clip);
+    var traces = el("g", { "clip-path": "url(#mareyPlotClip)" }, svg);
     var lastLabelY = Infinity;
     stops.forEach(function (s, idx) {
       var gy = y(s.miles);
@@ -237,14 +260,15 @@
       }).join(" ");
     }
 
+    svg.appendChild(traces);
     // Scheduled ghost paths underneath observed trajectories.
     if (sl.scheduledLines) {
       sl.scheduledLines.forEach(function (line) {
-        el("path", { d: pathFor(line), class: "ghost-line" }, svg);
+        el("path", { d: pathFor(line), class: "ghost-line" }, traces);
       });
     }
 
-    var delayByTrip = {};
+    var delayByTrip = Object.create(null);
     report.delay.perTrip.forEach(function (p) { delayByTrip[p.tripId] = p.finalDelaySec; });
     var maxDelay = 60;
     Object.keys(delayByTrip).forEach(function (k) { maxDelay = Math.max(maxDelay, Math.abs(delayByTrip[k])); });
@@ -253,7 +277,7 @@
     sl.lines.forEach(function (line, idx) {
       var d = delayByTrip[line.tripId] || 0;
       var color = diverging(d / maxDelay);
-      var path = el("path", { d: pathFor(line), class: "line-path", stroke: color }, svg);
+      var path = el("path", { d: pathFor(line), class: "line-path", stroke: color }, traces);
 
       // Direct inline train number callouts at the origin/terminal along the sheet
       if (line.points.length > 0) {
@@ -271,14 +295,15 @@
 
       var hit = el("path", {
         d: pathFor(line), fill: "none", stroke: "transparent",
-        "stroke-width": 10, class: "hit"
-      }, svg);
+        "stroke-width": 10, class: "hit", "aria-label": "Inspect train " + line.tripId + ", terminal offset " + fmtNum(d) + " seconds"
+      }, traces);
       hit.addEventListener("pointermove", function (ev) {
+        inspectTrain(line.tripId);
         showTip(ev.clientX, ev.clientY, "Train " + line.tripId, line.headsign || state.workingService.directionLabel, [
           { name: "Origin dep", value: fmtClock(line.startTime), color: color },
           { name: "Terminal arr", value: fmtClock(line.endTime) },
           { name: "Terminal offset", value: (d >= 0 ? "+" : "") + fmtNum(d, 0) + " s" },
-          { name: "Station stops", value: line.points.length }
+          { name: "Station stops", value: line.stopCount }
         ]);
         path.setAttribute("stroke-width", "3.2");
       });
@@ -287,8 +312,13 @@
       });
     });
 
+    if (!sl.lines.length) {
+      var empty = el("text", { x: padL + plotW / 2, y: padT + plotH / 2, "text-anchor": "middle", class: "axis-text" }, svg);
+      empty.textContent = "No trains overlap this time window. Choose another window.";
+    }
+
     // Highlight top bunching events directly on the Marey diagram as small callout rings.
-    var stopMiles = {};
+    var stopMiles = Object.create(null);
     stops.forEach(function (s) { stopMiles[s.id] = s.miles; });
     (report.bunching.bunchEvents || []).slice(0, 6).forEach(function (ev) {
       var m = stopMiles[ev.stopId];
@@ -303,7 +333,8 @@
     });
 
     var legendItems = [
-      { label: "On schedule / early", color: cssVar("--div-cool"), type: "line" },
+      { label: "On schedule", color: cssVar("--div-mid"), type: "line" },
+      { label: "Early train", color: cssVar("--div-cool"), type: "line" },
       { label: "Delayed train", color: cssVar("--div-warm"), type: "line" }
     ];
     if (sl.scheduledLines) {
@@ -331,17 +362,18 @@
     var rawX = function (s) { return (s.lon - minLon) * kx; };
     var rawY = function (s) { return (s.lat - minLat); };
     var xs = stops.map(rawX), ys = stops.map(rawY);
-    var spanX = (Math.max.apply(null, xs) - Math.min.apply(null, xs)) || 1;
-    var spanY = (Math.max.apply(null, ys) - Math.min.apply(null, ys)) || 1;
+    var spanX = Math.max.apply(null, xs) - Math.min.apply(null, xs);
+    var spanY = Math.max.apply(null, ys) - Math.min.apply(null, ys);
     var availW = W - 2 * padX, availH = H - 2 * padY;
-    var scaleF = Math.min(availW / spanX, availH / spanY);
+    var scaleF = Math.min(spanX ? availW / spanX : Infinity, spanY ? availH / spanY : Infinity);
+    if (!Number.isFinite(scaleF)) scaleF = 1;
     var usedW = spanX * scaleF, usedH = spanY * scaleF;
     var offX = padX + (availW - usedW) / 2;
     var offY = padY + (availH - usedH) / 2;
     var px = function (s) { return offX + (rawX(s) - Math.min.apply(null, xs)) * scaleF; };
     var py = function (s) { return offY + (spanY - (rawY(s) - Math.min.apply(null, ys))) * scaleF; };
 
-    var delayByStop = {};
+    var delayByStop = Object.create(null);
     report.delay.perStop.forEach(function (p) { delayByStop[p.stopId] = p.stats.mean; });
     var maxAbsDelay = 30;
     Object.keys(delayByStop).forEach(function (k) {
@@ -367,7 +399,7 @@
       }, svg);
       var hit = el("circle", {
         cx: cx.toFixed(1), cy: cy.toFixed(1), r: Math.max(12, r + 6),
-        class: "hit"
+        class: "hit", "aria-label": "Inspect station " + s.name + ", mean delay " + fmtNum(d) + " seconds"
       }, svg);
       hit.addEventListener("pointermove", function (ev) {
         showTip(ev.clientX, ev.clientY, s.name, s.code + " | milepost " + fmtNum(s.miles, 1), [
@@ -438,10 +470,10 @@
       }, svg);
       var hit = el("rect", {
         x: (cx - bandW / 2).toFixed(1), y: padT,
-        width: bandW, height: plotH, class: "hit"
+        width: bandW, height: plotH, class: "hit", "aria-label": d.label ? "Inspect headway " + d.label + ", " + d.count + " intervals" : "Inspect station " + d.stopName + ", delay " + fmtNum(d.stats.mean) + " seconds"
       }, svg);
       hit.addEventListener("pointermove", function (ev) {
-        showTip(ev.clientX, ev.clientY, fmtNum(d.count, 0) + " arrivals",
+        showTip(ev.clientX, ev.clientY, fmtNum(d.count, 0) + " intervals",
           d.label + " scheduled headway", [
             { name: "Interval", value: fmtNum(d.ratioLo * report.headways.plannedHeadwaySec / 60, 1) + " to " +
               fmtNum(d.ratioHi * report.headways.plannedHeadwaySec / 60, 1) + " min", color: barColor }
@@ -530,7 +562,7 @@
       }
       var bandL = i === 0 ? padL : (x(i - 1) + x(i)) / 2;
       var bandR = i === data.length - 1 ? W - padR : (x(i) + x(i + 1)) / 2;
-      var hit = el("rect", { x: bandL, y: padT, width: Math.max(1, bandR - bandL), height: plotH, class: "hit" }, svg);
+      var hit = el("rect", { x: bandL, y: padT, width: Math.max(1, bandR - bandL), height: plotH, class: "hit", "aria-label": "Inspect service hour " + d.label + ", mean headway " + fmtNum(d.meanSec / 60, 1) + " minutes" }, svg);
       var cross = el("line", { x1: x(i), x2: x(i), y1: padT, y2: padT + plotH, class: "crosshair", visibility: "hidden" }, svg);
       hit.addEventListener("pointermove", function (ev) {
         cross.setAttribute("visibility", "visible");
@@ -586,7 +618,7 @@
 
     data.forEach(function (d) {
       var row = document.createElement("div");
-      row.className = "bar-row";
+      row.className = "bar-row"; row.tabIndex = 0; row.setAttribute("role", "button"); row.setAttribute("aria-label", "Inspect dwell at " + d.stopName + ", " + fmtNum(d.stats.mean) + " seconds");
       var name = document.createElement("div");
       name.className = "name"; name.textContent = d.stopName;
       var track = document.createElement("div");
@@ -611,6 +643,9 @@
           ]);
       });
       row.addEventListener("pointerleave", hideTip);
+      row.addEventListener("focus", function () { row.dispatchEvent(new Event("pointermove")); });
+      row.addEventListener("blur", hideTip);
+      row.addEventListener("keydown", function (event) { if (event.key === "Escape") hideTip(); });
       node.appendChild(row);
     });
 
@@ -651,7 +686,7 @@
     var y = scale(-maxAbs, maxAbs, padT + plotH, padT);
     var zero = y(0);
     var bandW = plotW / Math.max(1, data.length);
-    var barW = Math.min(20, bandW - 3);
+    var barW = Math.max(1, Math.min(20, bandW - 3));
 
     [-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].forEach(function (v) {
       var gy = y(v);
@@ -675,7 +710,7 @@
       }, svg);
       var hit = el("rect", {
         x: (cx - bandW / 2).toFixed(1), y: padT,
-        width: bandW, height: plotH, class: "hit"
+        width: bandW, height: plotH, class: "hit", "aria-label": d.label ? "Inspect headway " + d.label + ", " + d.count + " intervals" : "Inspect station " + d.stopName + ", delay " + fmtNum(d.stats.mean) + " seconds"
       }, svg);
       hit.addEventListener("pointermove", function (ev) {
         showTip(ev.clientX, ev.clientY, (v >= 0 ? "+" : "") + fmtNum(v, 0) + " s",
@@ -787,7 +822,64 @@
     $("kpiEwt").textContent = fmtNum(report.bunching.excessWaitSec, 0) + "s";
     $("kpiEwtFoot").textContent = "Var(H) / 2E[H] rider wait penalty";
     $("kpiOntime").textContent = fmtPct(report.delay.onTimeRate);
-    $("kpiOntimeFoot").textContent = "within " + fmtNum(report.delay.onTimeThresholdSec, 0) + "s of timetable";
+    $("kpiOntimeFoot").textContent = report.delay.hasBaseline ? "within +/-" + fmtNum(report.delay.onTimeThresholdSec, 0) + "s of timetable" : "scheduled baseline, no observed telemetry";
+  }
+
+  function inspectTrain(tripId) {
+    var svc = state.workingService;
+    if (!svc) return;
+    var trips = svc.observedTrips || svc.trips;
+    var trip = trips.find(function (t) { return t.tripId === tripId; });
+    if (!trip) return;
+    state.selectedTripId = tripId;
+    $("trainSelect").value = tripId;
+    var planned = svc.trips.find(function (t) { return t.tripId === tripId; });
+    var last = trip.stopTimes[trip.stopTimes.length - 1];
+    var refLast = planned && planned.stopTimes[planned.stopTimes.length - 1];
+    var delay = refLast ? last.arrivalSec - refLast.arrivalSec : 0;
+    $("trainReadout").textContent = tripId + " | " + trip.stopTimes.length + " stations | terminal " + E.formatGtfsTime(last.arrivalSec) + " | " + (delay >= 0 ? "+" : "") + E.formatDuration(delay) + " from schedule";
+    renderTable($("trainTable"), {
+      columns: [{ key: "station", label: "Station" }, { key: "arrival", label: "Arrival" }, { key: "departure", label: "Departure" }, { key: "dwell", label: "Dwell", num: true }, { key: "delay", label: "Arrival offset", num: true }],
+      rows: trip.stopTimes.map(function (st, i) {
+        var ref = planned && planned.stopTimes[i], d = ref ? st.arrivalSec - ref.arrivalSec : 0;
+        return { station: (svc.stopIndex[st.stopId] || {}).name || st.stopId, arrival: E.formatGtfsTime(st.arrivalSec), departure: E.formatGtfsTime(st.departureSec), dwell: E.formatDuration(st.departureSec - st.arrivalSec), delay: (d >= 0 ? "+" : "") + E.formatDuration(d) };
+      })
+    });
+  }
+
+  function populateTrainSelect() {
+    var node = $("trainSelect"), svc = state.workingService;
+    clear(node);
+    (svc.observedTrips || svc.trips).forEach(function (trip) {
+      var option = document.createElement("option"); option.value = trip.tripId; option.textContent = trip.tripId;
+      node.appendChild(option);
+    });
+    var desired = state.selectedTripId || (state.scenarioResult && state.scenarioResult.incidentTripId) || svc.trips[0].tripId;
+    if (!svc.trips.some(function (t) { return t.tripId === desired; })) desired = svc.trips[0].tripId;
+    inspectTrain(desired);
+  }
+
+  function applyPreset(name) {
+    state.scenario = name; state.layer = name === "smooth" ? "scheduled" : "simulated";
+    state.serviceId = "cta-red"; state.selectedTripId = null; state.timeWindow = "focus";
+    if (state.source !== "demo") resetToDemo(false);
+    $("serviceSelect").value = state.serviceId; $("layerSelect").value = state.layer; $("timeWindow").value = "focus";
+    render();
+  }
+
+  function drawScenario(base) {
+    $("scenarioStrip").hidden = !state.scenario;
+    ["smooth", "incident", "recovery"].forEach(function (name) { $("preset" + name.charAt(0).toUpperCase() + name.slice(1)).setAttribute("aria-pressed", String(state.scenario === name)); });
+    if (!state.scenario) return;
+    var baseline = E.simulateCascade(base, { incidentSec: 900 });
+    var recovery = E.simulateCascade(base, { incidentSec: 900, regulate: true });
+    var b = E.analyzeHeadways(E.withObserved(base, baseline.observedTrips));
+    var r = E.analyzeHeadways(E.withObserved(base, recovery.observedTrips));
+    $("scenarioName").textContent = state.scenario === "smooth" ? "BASELINE: REGULAR EIGHT-MINUTE SERVICE" : state.scenario === "incident" ? "INCIDENT: FIFTEEN-MINUTE PLATFORM STOP" : "RECOVERY: RESTORE 75% OF PLANNED SPACING";
+    $("scenarioNarrative").textContent = "A 900 s platform incident delays " + baseline.delayedTrips + " trains. Spacing holds reduce the measured wait penalty by " + fmtNum((1 - r.excessWaitSec / b.excessWaitSec) * 100, 1) + "% and increase total terminal delay from " + E.formatDuration(baseline.totalTerminalDelaySec) + " to " + E.formatDuration(recovery.totalTerminalDelaySec) + ".";
+    $("baselineWait").textContent = fmtNum(b.excessWaitSec, 1) + " s";
+    $("recoveryWait").textContent = fmtNum(r.excessWaitSec, 1) + " s";
+    $("recoveryCost").textContent = E.formatDuration(recovery.holdSec);
   }
 
   /* ---------------------------------------------------------------- *
@@ -798,8 +890,16 @@
     var base = state.baseServices.find(function (s) { return s.id === state.serviceId; }) || state.baseServices[0];
     state.serviceId = base.id;
 
+    if (state.scenario) {
+      var corridor = E.CORRIDORS.find(function (c) { return c.id === "cta-red"; });
+      base = E.buildSyntheticService(corridor, { startSec: 7 * 3600, endSec: 9 * 3600 });
+    }
     var working = base;
-    if (state.layer === "simulated" && state.intensity > 0) {
+    state.scenarioResult = null;
+    if (state.scenario && state.scenario !== "smooth") {
+      state.scenarioResult = E.simulateCascade(base, { incidentSec: 900, regulate: state.scenario === "recovery" });
+      working = E.withObserved(base, state.scenarioResult.observedTrips);
+    } else if (state.layer === "simulated" && state.intensity > 0) {
       var observed = E.simulateObserved(base, { intensity: state.intensity, seed: 20261108 });
       working = E.withObserved(base, observed);
     } else {
@@ -807,15 +907,23 @@
     }
     state.workingService = working;
 
-    var report = E.buildReport(working, { maxStringlineTrips: 26 });
+    var ranges = { morning: [6 * 3600, 10 * 3600], midday: [11 * 3600, 15 * 3600], evening: [16 * 3600, 20 * 3600] };
+    var report = E.buildReport(working, { maxStringlineTrips: state.timeWindow === "focus" ? 26 : 0, timeRange: ranges[state.timeWindow] });
     state.report = report;
 
     $("mapSub").textContent = base.directionLabel + " | " + base.operator + " | " +
       base.name + " (" + base.stops.length + " stations)";
     $("dataDisclosure").textContent = state.source === "gtfs"
-      ? "Loaded from uploaded GTFS static tables. Observed trajectories are simulated around the real schedule; apply GTFS-RT stop_time_update records for live telemetry."
-      : "Preloaded corridors use regular-interval synthetic timetables over published station mileposts for offline inspection. Upload any GTFS static archive (.zip or CSV) to compute schedules and reliability metrics from agency feed files.";
+      ? (state.layer === "scheduled" ? "Loaded from uploaded GTFS static tables. This view shows planned schedules. Static GTFS contains no observed reliability measurements." : "Loaded from uploaded GTFS static tables. Colored trajectories are simulated around the planned schedule. Per-stop observed updates are available through the engine API.")
+      : "Preloaded corridors use regular-interval synthetic timetables over illustrative station mileposts for offline inspection. Upload any GTFS static archive (.zip or CSV) to compute schedules and reliability metrics from agency feed files.";
 
+    hideTip();
+    drawScenario(base);
+    var validation = report.verification;
+    $("verificationBadge").textContent = validation.passed ? validation.roundTrips + " timestamp round trips verified | " + validation.checks + " timetable checks" : validation.errors.length + " timetable checks failed";
+    $("verificationBadge").className = "verification" + (validation.passed ? "" : " error");
+    $("stringlineNote").textContent = "Showing " + report.stringline.visibleTrips + " of " + report.stringline.availableTrips + " trains in this window. Horizontal segments show station dwell. Dashed lines show the matching schedule. Focus any train for its exact timing ledger.";
+    populateTrainSelect();
     drawOverview(report);
     drawStringline(report);
     drawMap(report);
@@ -841,6 +949,7 @@
   function setTheme(dark) {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
     $("themeToggle").textContent = dark ? "Light paper" : "Dark desk";
+    $("themeToggle").setAttribute("aria-pressed", String(dark));
     if (state.report) render();
   }
 
@@ -851,18 +960,19 @@
   /* ---------------------------------------------------------------- *
    * GTFS upload
    * ---------------------------------------------------------------- */
-  async function handleGtfsFiles(fileList) {
+  async function handleGtfsFiles(fileList, cached) {
     var files = Array.prototype.slice.call(fileList || []);
-    if (!files.length) return;
+    if (!files.length && !cached) return;
+    var request = ++state.feedRequest;
     var notice = $("feedNotice");
     notice.hidden = false;
     notice.className = "feed-notice";
     notice.textContent = "Reading GTFS feed tables and building normalized services...";
 
     try {
-      var fileMap = {};
+      var fileMap = cached || Object.create(null);
       var zipFile = files.find(function (f) { return /\.zip$/i.test(f.name); });
-      if (zipFile) {
+      if (cached) { /* Re-evaluate the cached feed when its service date changes. */ } else if (zipFile) {
         var buf = await zipFile.arrayBuffer();
         fileMap = await E.readFeedFiles(buf);
       } else {
@@ -873,13 +983,15 @@
       }
       var options = { files: fileMap, maxServices: 24 };
       var dateVal = $("dateInput").value.trim();
-      if (/^\d{8}$/.test(dateVal)) options.date = dateVal;
+      if (dateVal) options.date = dateVal;
 
       var parsed = await E.parseGtfs(options);
+      if (request !== state.feedRequest) return;
       if (!parsed.services.length) {
-        throw new Error("No usable routes found in this feed (need trips.txt and stop_times.txt).");
+        throw new Error("No usable trips run on the selected service date. " + parsed.warnings.join(" "));
       }
       state.baseServices = parsed.services;
+      state.feedFiles = fileMap; state.scenario = null; state.selectedTripId = null;
       state.source = "gtfs";
       state.serviceId = parsed.services[0].id;
       state.date = parsed.date;
@@ -894,22 +1006,24 @@
         (parsed.warnings.length ? " Notes: " + parsed.warnings.join(" ") : "");
       render();
     } catch (err) {
+      if (request !== state.feedRequest) return;
       notice.className = "feed-notice error";
       notice.textContent = "Could not parse GTFS feed: " + (err && err.message ? err.message : err);
     }
   }
 
-  function resetToDemo() {
+  function resetToDemo(renderNow) {
+    state.feedRequest++; state.feedFiles = null;
     state.baseServices = E.buildAllSyntheticServices();
     state.source = "demo";
-    state.serviceId = state.baseServices[0].id;
+    state.serviceId = "cta-red";
     state.date = null;
     $("sourceBadge").textContent = "Preloaded corridor timetable";
     $("gtfsInput").value = "";
     $("dateInput").value = "";
     var notice = $("feedNotice"); notice.hidden = true;
     populateServiceSelect();
-    render();
+    if (renderNow !== false) { state.scenario = "incident"; state.layer = "simulated"; state.timeWindow = "focus"; state.selectedTripId = null; $("layerSelect").value = state.layer; $("timeWindow").value = state.timeWindow; render(); }
   }
 
   /* ---------------------------------------------------------------- *
@@ -917,27 +1031,44 @@
    * ---------------------------------------------------------------- */
   function wire() {
     $("serviceSelect").addEventListener("change", function (e) {
-      state.serviceId = e.target.value; render();
+      state.serviceId = e.target.value; state.scenario = null; state.selectedTripId = null; render();
     });
     $("layerSelect").addEventListener("change", function (e) {
-      state.layer = e.target.value; render();
+      state.layer = e.target.value; state.scenario = null; render();
     });
     $("intensitySelect").addEventListener("change", function (e) {
-      state.intensity = parseFloat(e.target.value); render();
+      state.intensity = parseFloat(e.target.value); state.scenario = null; state.layer = "simulated"; $("layerSelect").value = "simulated"; render();
     });
     $("gtfsInput").addEventListener("change", function (e) { handleGtfsFiles(e.target.files); });
     $("dateInput").addEventListener("change", function () {
-      if (state.source === "gtfs") handleGtfsFiles($("gtfsInput").files);
+      if (state.source === "gtfs") handleGtfsFiles([], state.feedFiles);
     });
-    $("demoReset").addEventListener("click", resetToDemo);
+    $("demoReset").addEventListener("click", function () { resetToDemo(); });
+    $("trainSelect").addEventListener("change", function (event) { inspectTrain(event.target.value); });
+    $("timeWindow").addEventListener("change", function (event) { state.timeWindow = event.target.value; render(); });
+    document.querySelectorAll("[data-preset]").forEach(function (button) { button.addEventListener("click", function () { applyPreset(button.getAttribute("data-preset")); }); });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") hideTip();
+      if (event.ctrlKey || event.metaKey || event.altKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
+      var name = { "1": "smooth", "2": "incident", "3": "recovery" }[event.key];
+      if (name) { event.preventDefault(); applyPreset(name); }
+    });
+    $("exportReport").addEventListener("click", function () {
+      if (!state.report) return;
+      var blob = new Blob([JSON.stringify({ generatedBy: "RailPulse", scenario: state.scenario, report: state.report, assumptions: "Synthetic corridors and station-spacing simulation are illustrative. GTFS schedules remain static planned data." }, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob), link = document.createElement("a");
+      link.href = url; link.download = "railpulse-dispatch.json"; document.body.appendChild(link); link.click(); document.body.removeChild(link); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    });
     $("themeToggle").addEventListener("click", function () {
       setTheme(document.documentElement.getAttribute("data-theme") !== "dark");
     });
     document.querySelectorAll(".toggle-table").forEach(function (btn) {
+      var target = $(btn.getAttribute("data-table")); btn.setAttribute("aria-controls", target.id); btn.setAttribute("aria-expanded", String(!target.hidden));
       btn.addEventListener("click", function () {
         var table = $(btn.getAttribute("data-table"));
         table.hidden = !table.hidden;
         btn.textContent = table.hidden ? "Table" : "Hide table";
+        btn.setAttribute("aria-expanded", String(!table.hidden));
       });
     });
   }
@@ -946,7 +1077,7 @@
     wire();
     initTheme();
     state.baseServices = E.buildAllSyntheticServices();
-    state.serviceId = state.baseServices[0].id;
+    state.serviceId = "cta-red";
     populateServiceSelect();
     var prov = (window.RailPulse && window.RailPulse.CORRIDOR_PROVENANCE) || [];
     $("provenance").textContent = "Timetable provenance: " + prov.join(" ");

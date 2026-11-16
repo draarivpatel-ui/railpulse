@@ -43,7 +43,7 @@ python3 -m http.server 8000
 | --- | --- |
 | `engine.js` | GTFS parsing, the normalised service model, and all statistics (UMD) |
 | `corridors.js` | The bundled reference feeds attached to `globalThis.RailPulse` |
-| `app.js` | UI wiring: feed loading, stringline rendering, and figure export |
+| `app.js` | UI wiring: feed loading, stringline rendering, and structured report export |
 | `index.html`, `style.css` | The workbench shell and its styling |
 | `tests/railpulse.test.js` | The test suite |
 
