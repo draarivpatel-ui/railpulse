@@ -970,7 +970,11 @@ test("populationVariance and mean tolerate empty or non-finite input", () => {
   assert.equal(E.populationVariance([NaN, Infinity]), 0);
   assert.equal(E.populationVariance([60, 180]), 3600);
   assert.equal(E.mean(null), 0);
+  assert.equal(E.mean([NaN, 2]), 2);
+  assert.equal(E.mean([NaN, Infinity]), 0);
   assert.equal(E.stddev(null), 0);
+  assert.equal(E.stddev([NaN]), 0);
+  assert.equal(E.stddev([NaN, 2, 4]), Math.sqrt(2));
 });
 
 test("verifyService flags journeys whose route miles run backwards", () => {

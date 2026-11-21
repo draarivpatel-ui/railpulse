@@ -38,15 +38,17 @@
 
   function mean(a) {
     if (!a || !a.length) return 0;
-    var s = 0;
-    for (var i = 0; i < a.length; i++) s += a[i];
-    return s / a.length;
+    var s = 0, n = 0;
+    for (var i = 0; i < a.length; i++) if (isFiniteNum(a[i])) { s += a[i]; n++; }
+    return n ? s / n : 0;
   }
   function stddev(a) {
     if (!a || a.length < 2) return 0;
-    var m = mean(a), s = 0;
-    for (var i = 0; i < a.length; i++) { var d = a[i] - m; s += d * d; }
-    return Math.sqrt(s / (a.length - 1));
+    var clean = a.filter(isFiniteNum);
+    if (clean.length < 2) return 0;
+    var m = mean(clean), s = 0;
+    for (var i = 0; i < clean.length; i++) { var d = clean[i] - m; s += d * d; }
+    return Math.sqrt(s / (clean.length - 1));
   }
   function percentile(sorted, p) {
     if (!sorted || !sorted.length) return 0;

@@ -885,7 +885,8 @@
     var b = E.analyzeHeadways(E.withObserved(base, baseline.observedTrips));
     var r = E.analyzeHeadways(E.withObserved(base, recovery.observedTrips));
     $("scenarioName").textContent = state.scenario === "smooth" ? "BASELINE: REGULAR EIGHT-MINUTE SERVICE" : state.scenario === "incident" ? "INCIDENT: FIFTEEN-MINUTE PLATFORM STOP" : "RECOVERY: RESTORE 75% OF PLANNED SPACING";
-    $("scenarioNarrative").textContent = "A 900 s platform incident delays " + baseline.delayedTrips + " trains. Spacing holds reduce the measured wait penalty by " + fmtNum((1 - r.excessWaitSec / b.excessWaitSec) * 100, 1) + "% and increase total terminal delay from " + E.formatDuration(baseline.totalTerminalDelaySec) + " to " + E.formatDuration(recovery.totalTerminalDelaySec) + ".";
+    var waitCut = b.excessWaitSec > 0 ? (1 - r.excessWaitSec / b.excessWaitSec) * 100 : 0;
+    $("scenarioNarrative").textContent = "A 900 s platform incident delays " + baseline.delayedTrips + " trains. Spacing holds reduce the measured wait penalty by " + fmtNum(waitCut, 1) + "% and increase total terminal delay from " + E.formatDuration(baseline.totalTerminalDelaySec) + " to " + E.formatDuration(recovery.totalTerminalDelaySec) + ".";
     $("baselineWait").textContent = fmtNum(b.excessWaitSec, 1) + " s";
     $("recoveryWait").textContent = fmtNum(r.excessWaitSec, 1) + " s";
     $("recoveryCost").textContent = E.formatDuration(recovery.holdSec);
@@ -932,9 +933,9 @@
     $("verificationBadge").textContent = validation.passed ? validation.roundTrips + " timestamp round trips verified | " + validation.checks + " timetable checks" : validation.errors.length + " timetable checks failed";
     $("verificationBadge").className = "verification" + (validation.passed ? "" : " error");
     $("stringlineNote").textContent = "Showing " + report.stringline.visibleTrips + " of " + report.stringline.availableTrips + " trains in this window. Horizontal segments show station dwell. Dashed lines show the matching schedule. Focus any train for its exact timing ledger.";
-    populateTrainSelect();
     drawOverview(report);
     drawStringline(report);
+    populateTrainSelect();
     drawMap(report);
     drawHeadwayHistogram(report);
     drawTimeOfDay(report);
