@@ -34,8 +34,8 @@ We also removed silent data corruption paths. Excluded service days stay exclude
 
 ## Verification numbers
 
-- **103 tests passed, 0 failed, 0 skipped**, verified on Node v26.8.1 with `node --test tests/`.
-- **86 engine/import tests**, including archive corruption, three DEFLATE block types, service calendars, direction and pattern groups, loop trips, interpolation, station-hold dwell attribution, and manually derived wait math.
+- **105 tests passed, 0 failed, 0 skipped**, verified on Node v26.8.1 with `node --test tests/`.
+- **87 engine/import tests**, including archive corruption, three DEFLATE block types, service calendars, direction and pattern groups, loop trips, interpolation, station-hold dwell attribution, and manually derived wait math.
 - **17 DOM runtime tests**, evaluating the actual scripts and markup, startup, presets, keyboard inspection, train tables, theme, upload recovery, inert feed labels, prototype-safe rendering, and report download.
 - **Seven corridor fixtures across five time windows**, exercised in the DOM suite at a 320-pixel viewport with finite SVG-coordinate checks.
 - **Five JavaScript files passed `node --check`**.

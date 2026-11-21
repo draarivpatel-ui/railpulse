@@ -173,7 +173,7 @@ test("parseGtfsTime parses HH:MM:SS and after-midnight hours", () => {
 test("formatGtfsTime round-trips and preserves hours above 24", () => {
   assert.equal(E.formatGtfsTime(0), "00:00:00");
   assert.equal(E.formatGtfsTime(90600), "25:10:00");
-  assert.equal(E.formatGtfsTime(-90), "-00:01:30");
+  assert.equal(E.formatGtfsTime(-90), "");
   assert.equal(E.parseGtfsTime(E.formatGtfsTime(86399)), 86399);
 });
 
@@ -963,3 +963,20 @@ test("blank stop_sequence is rejected rather than coerced to zero", async () => 
   assert.ok(none.warnings.some(w => /invalid stop_sequence/.test(w)), String(none.warnings));
 });
 
+
+test("populationVariance and mean tolerate empty or non-finite input", () => {
+  assert.equal(E.populationVariance(null), 0);
+  assert.equal(E.populationVariance([]), 0);
+  assert.equal(E.populationVariance([NaN, Infinity]), 0);
+  assert.equal(E.populationVariance([60, 180]), 3600);
+  assert.equal(E.mean(null), 0);
+  assert.equal(E.stddev(null), 0);
+});
+
+test("verifyService flags journeys whose route miles run backwards", () => {
+  const svc = E.buildSyntheticService(makeCorridor());
+  const reversed = { ...svc, trips: svc.trips.map(t => ({ ...t, stopTimes: t.stopTimes.map((st, i) => ({ ...st, miles: i === 0 ? 9 : st.miles })) })) };
+  const check = E.verifyService(reversed);
+  assert.equal(check.passed, false);
+  assert.ok(check.errors.some(e => /Decreasing distance/.test(e)), String(check.errors));
+});

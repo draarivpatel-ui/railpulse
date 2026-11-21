@@ -70,16 +70,16 @@ node --test tests/
 Verified locally on Node v26.8.1:
 
 ```text
- tests 103
+ tests 105
  suites 0
- pass 103
+ pass 105
  fail 0
  cancelled 0
  skipped 0
  todo 0
 ```
 
-There are **86 engine and import tests** and **17 DOM runtime tests**. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
+There are **88 engine and import tests** and **17 DOM runtime tests**. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
 
 Syntax checks:
 

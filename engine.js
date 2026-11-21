@@ -60,11 +60,14 @@
     var s = a.slice().sort(function (x, y) { return x - y; });
     return percentile(s, 0.5);
   }
-  function sum(a) { var t = 0; for (var i = 0; i < a.length; i++) t += a[i]; return t; }
+  function sum(a) { if (!a || !a.length) return 0; var t = 0; for (var i = 0; i < a.length; i++) if (isFiniteNum(a[i])) t += a[i]; return t; }
 
   function populationVariance(a) {
-    var m = mean(a);
-    return a.length ? mean(a.map(function (v) { return (v - m) * (v - m); })) : 0;
+    if (!Array.isArray(a) || !a.length) return 0;
+    var clean = a.filter(isFiniteNum);
+    if (!clean.length) return 0;
+    var m = mean(clean);
+    return mean(clean.map(function (v) { return (v - m) * (v - m); }));
   }
 
   /* Convenience: variation of a sample around its mean. */
@@ -151,13 +154,12 @@
   /* Format seconds-from-service-day-start back to HH:MM:SS. Hours above 24
    * are preserved (GTFS style), so 25:10:00 stays 25:10:00. */
   function formatGtfsTime(sec) {
-    if (!isFiniteNum(sec)) return "";
-    var neg = sec < 0;
-    var t = Math.round(Math.abs(sec));
+    if (!isFiniteNum(sec) || sec < 0) return "";
+    var t = Math.round(sec);
     var h = Math.floor(t / 3600);
     var m = Math.floor((t % 3600) / 60);
     var s = t % 60;
-    return (neg ? "-" : "") + pad2(h) + ":" + pad2(m) + ":" + pad2(s);
+    return pad2(h) + ":" + pad2(m) + ":" + pad2(s);
   }
 
   /* Format a number of seconds as a compact human duration, e.g. 7m 30s. */
@@ -1055,11 +1057,15 @@
     [service.trips, service.observedTrips].filter(Array.isArray).forEach(function (trips) {
       trips.forEach(function (trip) {
         if (!Array.isArray(trip.stopTimes) || !trip.stopTimes.length) errors.push("Missing stop times in " + trip.tripId);
-        var previous = -Infinity;
+        var previous = -Infinity, prevMiles = -Infinity;
         (trip.stopTimes || []).forEach(function (st) {
           checks += 3;
           if (!index[st.stopId]) errors.push("Unknown station in " + trip.tripId);
           if (!isFiniteNum(st.miles) || st.miles < 0) errors.push("Invalid distance in " + trip.tripId);
+          else {
+            if (st.miles < prevMiles) errors.push("Decreasing distance in " + trip.tripId);
+            prevMiles = st.miles;
+          }
           if (st.arrivalSec < previous || st.departureSec < st.arrivalSec) errors.push("Decreasing times in " + trip.tripId);
           [st.arrivalSec, st.departureSec].forEach(function (sec) {
             checks++; roundTrips++;
@@ -1593,6 +1599,7 @@
     stddev: stddev,
     percentile: percentile,
     median: median,
+    sum: sum,
     describeSample: describeSample,
     populationVariance: populationVariance,
     verifyService: verifyService,

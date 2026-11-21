@@ -23,6 +23,7 @@
     scenario: "incident",
     scenarioResult: null,
     selectedTripId: null,
+    trainPaths: {},
     timeWindow: "focus",
     feedFiles: null,
     feedRequest: 0
@@ -198,6 +199,7 @@
   function drawStringline(report) {
     var svg = $("stringlineChart");
     clear(svg);
+    state.trainPaths = {};
     var sl = report.stringline;
     var stops = sl.stops || state.workingService.stops || [];
     var W = 980, H = 480, padL = 138, padR = 76, padT = 26, padB = 42;
@@ -278,6 +280,7 @@
       var d = delayByTrip[line.tripId] || 0;
       var color = diverging(d / maxDelay);
       var path = el("path", { d: pathFor(line), class: "line-path", stroke: color }, traces);
+      state.trainPaths[line.tripId] = path;
 
       // Direct inline train number callouts at the origin/terminal along the sheet
       if (line.points.length > 0) {
@@ -308,7 +311,7 @@
         path.setAttribute("stroke-width", "3.2");
       });
       hit.addEventListener("pointerleave", function () {
-        hideTip(); path.setAttribute("stroke-width", "1.85");
+        hideTip(); if (state.selectedTripId !== line.tripId) path.setAttribute("stroke-width", "1.85");
       });
     });
 
@@ -832,6 +835,12 @@
     var trip = trips.find(function (t) { return t.tripId === tripId; });
     if (!trip) return;
     state.selectedTripId = tripId;
+    if (state.trainPaths) {
+      Object.keys(state.trainPaths).forEach(function (id) {
+        var p = state.trainPaths[id];
+        if (p) p.setAttribute("stroke-width", id === tripId ? "3.2" : "1.85");
+      });
+    }
     $("trainSelect").value = tripId;
     var planned = svc.trips.find(function (t) { return t.tripId === tripId; });
     var last = trip.stopTimes[trip.stopTimes.length - 1];

@@ -101,11 +101,6 @@ body {
   margin: 0;
   letter-spacing: -0.02em;
 }
-.tagline {
-  margin: 2px 0 0;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .badge {
   font-family: var(--font-mono);
@@ -520,9 +515,8 @@ tbody tr:hover { background: var(--wash); }
 .skip-link { position: absolute; left: 16px; top: -60px; z-index: 100; padding: 12px; background: var(--card); border: 2px solid var(--series-1); color: var(--text-primary); }
 .skip-link:focus { top: 12px; }
 .showcase { display: grid; grid-template-columns: 1fr 1.2fr; gap: 28px; padding: 28px 0 24px; align-items: center; }
-.eyebrow { font: 10px var(--font-mono); letter-spacing: 0.08em; font-weight: 700; color: var(--series-1); margin: 0 0 8px; }
 .showcase h2 { margin: 0 0 10px; font-size: clamp(24px, 3.3vw, 36px); line-height: 1.12; letter-spacing: -0.04em; max-width: 480px; }
-.showcase p:not(.eyebrow) { font-size: 13px; color: var(--text-secondary); margin: 0; max-width: 470px; }
+.showcase p { font-size: 13px; color: var(--text-secondary); margin: 0; max-width: 470px; }
 .presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .preset { position: relative; border: 1px solid var(--border); border-top: 3px solid var(--axis); background: var(--card); text-align: left; color: var(--text-primary); padding: 14px 11px; font: inherit; cursor: pointer; min-height: 106px; }
 .preset strong { display: block; font-size: 12.5px; margin-top: 16px; }
@@ -563,7 +557,6 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; padding: 8px 0; }
 @media (max-width: 600px) {
   .viz-root { padding: 14px 12px 32px; }
   .topbar { gap: 12px; }
-  .tagline { max-width: 270px; }
   .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
   .control select, .control input[type="text"], .control input[type="file"] { min-height: 40px; }
   .card { padding: 14px 12px; }
