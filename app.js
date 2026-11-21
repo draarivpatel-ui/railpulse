@@ -26,7 +26,8 @@
     trainPaths: {},
     timeWindow: "focus",
     feedFiles: null,
-    feedRequest: 0
+    feedRequest: 0,
+    shortcutsEnabled: true
   };
 
   /* ---------------------------------------------------------------- *
@@ -621,7 +622,7 @@
 
     data.forEach(function (d) {
       var row = document.createElement("div");
-      row.className = "bar-row"; row.tabIndex = 0; row.setAttribute("role", "button"); row.setAttribute("aria-label", "Inspect dwell at " + d.stopName + ", " + fmtNum(d.stats.mean) + " seconds");
+      row.className = "bar-row"; row.tabIndex = 0; row.setAttribute("role", "button"); row.setAttribute("aria-label", "Inspect dwell at " + d.stopName + ", " + fmtNum(d.stats.mean) + " seconds"); row.setAttribute("aria-describedby", "tooltip");
       var name = document.createElement("div");
       name.className = "name"; name.textContent = d.stopName;
       var track = document.createElement("div");
@@ -863,6 +864,7 @@
       var option = document.createElement("option"); option.value = trip.tripId; option.textContent = trip.tripId;
       node.appendChild(option);
     });
+    if (!svc.trips.length) { $("trainReadout").textContent = ""; return; }
     var desired = state.selectedTripId || (state.scenarioResult && state.scenarioResult.incidentTripId) || svc.trips[0].tripId;
     if (!svc.trips.some(function (t) { return t.tripId === desired; })) desired = svc.trips[0].tripId;
     inspectTrain(desired);
@@ -981,14 +983,37 @@
 
     try {
       var fileMap = cached || Object.create(null);
-      var zipFile = files.find(function (f) { return /\.zip$/i.test(f.name); });
-      if (cached) { /* Re-evaluate the cached feed when its service date changes. */ } else if (zipFile) {
-        var buf = await zipFile.arrayBuffer();
+      var extraNotes = [];
+      var zipFiles = [];
+      for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        if (f.size != null && f.size > E.MAX_FEED_BYTES) throw new Error(f.name + " exceeds the 128 MiB GTFS input limit");
+        // A ZIP renamed past the .zip filter still imports: sniff the magic bytes.
+        if (/\.zip$/i.test(f.name)) { zipFiles.push(f); continue; }
+        if (typeof f.slice === "function" && f.size >= 4) {
+          var head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+          if (head[0] === 0x50 && head[1] === 0x4B) zipFiles.push(f);
+        }
+      }
+      if (cached) { /* Re-evaluate the cached feed when its service date changes. */ } else if (zipFiles.length) {
+        var buf = await zipFiles[0].arrayBuffer();
         fileMap = await E.readFeedFiles(buf);
+        // Every other selected file still counts: loose tables merge into the
+        // archive's map (archive wins on a name clash) and extra archives are
+        // reported instead of silently dropped.
+        for (var j = 0; j < files.length; j++) {
+          var fj = files[j];
+          if (fj === zipFiles[0]) continue;
+          if (zipFiles.indexOf(fj) >= 0) { extraNotes.push(fj.name + " ignored (only the first archive is read)"); continue; }
+          var base = fj.name.split("/").pop().toLowerCase().replace(/\.csv$/i, ".txt");
+          if (Object.prototype.hasOwnProperty.call(fileMap, base)) { extraNotes.push(fj.name + " skipped (the archive's copy was kept)"); continue; }
+          fileMap[fj.name] = await fj.text();
+          extraNotes.push(fj.name + " merged into the feed");
+        }
       } else {
-        for (var i = 0; i < files.length; i++) {
-          var text = await files[i].text();
-          fileMap[files[i].name] = text;
+        for (var k = 0; k < files.length; k++) {
+          var text = await files[k].text();
+          fileMap[files[k].name] = text;
         }
       }
       var options = { files: fileMap, maxServices: 24 };
@@ -1013,7 +1038,8 @@
       notice.className = "feed-notice";
       notice.textContent = "Loaded " + parsed.services.length + " directional service(s) for date " +
         parsed.date + " (" + parsed.routeCount + " routes in feed)." +
-        (parsed.warnings.length ? " Notes: " + parsed.warnings.join(" ") : "");
+        (parsed.warnings.length ? " Notes: " + parsed.warnings.join(" ") : "") +
+        (extraNotes.length ? " Files: " + extraNotes.join("; ") + "." : "");
       render();
     } catch (err) {
       if (request !== state.feedRequest) return;
@@ -1059,15 +1085,31 @@
     document.querySelectorAll("[data-preset]").forEach(function (button) { button.addEventListener("click", function () { applyPreset(button.getAttribute("data-preset")); }); });
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape") hideTip();
-      if (event.ctrlKey || event.metaKey || event.altKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || /INPUT|SELECT|TEXTAREA/.test(event.target.tagName) || event.target.isContentEditable) return;
+      // WCAG 2.1.4: single-character shortcuts carry an off switch.
+      if (!state.shortcutsEnabled) return;
       var name = { "1": "smooth", "2": "incident", "3": "recovery" }[event.key];
       if (name) { event.preventDefault(); applyPreset(name); }
     });
+    $("shortcutToggle").addEventListener("click", function () {
+      state.shortcutsEnabled = !state.shortcutsEnabled;
+      var btn = $("shortcutToggle");
+      btn.setAttribute("aria-pressed", String(state.shortcutsEnabled));
+      btn.textContent = state.shortcutsEnabled ? "Keys 1-3 on" : "Keys 1-3 off";
+    });
     $("exportReport").addEventListener("click", function () {
       if (!state.report) return;
-      var blob = new Blob([JSON.stringify({ generatedBy: "RailPulse", scenario: state.scenario, report: state.report, assumptions: "Synthetic corridors and station-spacing simulation are illustrative. GTFS schedules remain static planned data." }, null, 2)], { type: "application/json" });
+      var core = { generatedBy: "RailPulse", scenario: state.scenario, report: state.report, assumptions: "Synthetic corridors and station-spacing simulation are illustrative. GTFS schedules remain static planned data." };
+      core.integrity = { algorithm: "SHA-256", digest: E.sha256Hex(JSON.stringify(core)) };
+      var blob = new Blob([JSON.stringify(core, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob), link = document.createElement("a");
       link.href = url; link.download = "railpulse-dispatch.json"; document.body.appendChild(link); link.click(); document.body.removeChild(link); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    });
+    $("exportCsv").addEventListener("click", function () {
+      if (!state.report) return;
+      var blob = new Blob([E.reportCsv(state.report)], { type: "text/csv" });
+      var url = URL.createObjectURL(blob), link = document.createElement("a");
+      link.href = url; link.download = "railpulse-stations.csv"; document.body.appendChild(link); link.click(); document.body.removeChild(link); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     });
     $("themeToggle").addEventListener("click", function () {
       setTheme(document.documentElement.getAttribute("data-theme") !== "dark");

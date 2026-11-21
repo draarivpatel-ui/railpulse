@@ -75,6 +75,7 @@
         <input id="dateInput" type="text" inputmode="numeric" placeholder="auto" maxlength="8">
       </label>
       <button id="demoReset" class="btn ghost" type="button">Reset timetable</button>
+      <button id="shortcutToggle" class="btn ghost" type="button" aria-pressed="true" aria-label="Single-key preset shortcuts">Keys 1-3 on</button>
     </section>
 
     <p id="feedNotice" class="feed-notice" role="status" aria-live="polite" hidden></p>
@@ -84,7 +85,7 @@
         <div><span id="scenarioName">PLATFORM INCIDENT</span><p id="scenarioNarrative"></p></div>
         <div class="comparison"><div><small>Unregulated wait penalty</small><strong id="baselineWait">--</strong></div><div><small>With spacing holds</small><strong id="recoveryWait">--</strong></div><div><small>Additional station holds</small><strong id="recoveryCost">--</strong></div></div>
       </section>
-      <div class="verification-bar"><span class="verification" id="verificationBadge" role="status" aria-live="polite">Checking timetable</span><button class="btn" id="exportReport" type="button">Download dispatch report</button></div>
+      <div class="verification-bar"><span class="verification" id="verificationBadge" role="status" aria-live="polite">Checking timetable</span><button class="btn" id="exportReport" type="button">Download dispatch report</button><button class="btn" id="exportCsv" type="button">Download station CSV</button></div>
       <!-- Dispatch summary ledger -->
       <section class="overview" aria-label="Dispatch summary ledger">
         <div class="hero card">
@@ -237,7 +238,7 @@
     </main>
 
     <footer class="footer">
-      <p>Keyboard: 1 baseline, 2 incident, 3 recovery. Tab to any chart mark to inspect. Escape closes the tooltip.</p>
+      <p>Keyboard: 1 baseline, 2 incident, 3 recovery (switch single-key shortcuts off in the control bar). Tab to any chart mark to inspect. Escape closes the tooltip.</p>
       <p>RailPulse executes locally in your browser with zero external dependencies and zero network requests. GTFS feed archives never leave your machine.</p>
       <p class="provenance" id="provenance"></p>
     </footer>

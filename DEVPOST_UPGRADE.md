@@ -34,13 +34,14 @@ We also removed silent data corruption paths. Excluded service days stay exclude
 
 ## Verification numbers
 
-- **105 tests passed, 0 failed, 0 skipped**, verified on Node v26.8.1 with `node --test tests/`.
-- **87 engine/import tests**, including archive corruption, three DEFLATE block types, service calendars, direction and pattern groups, loop trips, interpolation, station-hold dwell attribution, and manually derived wait math.
-- **17 DOM runtime tests**, evaluating the actual scripts and markup, startup, presets, keyboard inspection, train tables, theme, upload recovery, inert feed labels, prototype-safe rendering, and report download.
+- **202 tests passed, 0 failed, 0 skipped**, verified on Node v26.8.1 with `node --test tests/`.
+- **88 engine/import tests**, including archive corruption, three DEFLATE block types, service calendars, direction and pattern groups, loop trips, interpolation, station-hold dwell attribution, and manually derived wait math.
+- **97 adversarial hardening tests**, attacking the ZIP reader with forged archives (entry-count lies, split and ZIP64 markers, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV, overnight service-day times, prototype-pollution keys, and stale-upload races, plus direct math checks: sample-sigma headway CV, population-variance excess wait, monotone stringlines, cascade separation and dwell invariants, formula-safe CSV cells, and the SHA-256 export digest.
+- **17 DOM runtime tests**, evaluating the actual scripts and markup, startup, presets, keyboard inspection, train tables, theme, upload recovery, inert feed labels, prototype-safe rendering, report download, and the WCAG 2.1.4 single-key shortcut switch.
 - **Seven corridor fixtures across five time windows**, exercised in the DOM suite at a 320-pixel viewport with finite SVG-coordinate checks.
-- **Five JavaScript files passed `node --check`**.
+- **Seven JavaScript files passed `node --check`**.
 - **16 showcase trips, 33 station visits per trip**.
-- **2,112 timestamp round trips and 5,280 timetable checks** passed across the scheduled and simulated showcase layers.
+- **2,112 timestamp round trips and 5,313 timetable checks** passed across the scheduled and simulated showcase layers.
 - **19.5% lower empirical excess wait** with station spacing holds, with the extra terminal delay reported alongside it.
 - **128 MiB compressed/expanded ZIP limit and 1,024-entry limit**, enforced by the importer.
 - **Zero runtime dependencies, external assets, build steps, or automatic network requests**.

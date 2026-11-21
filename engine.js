@@ -69,7 +69,14 @@
     var clean = a.filter(isFiniteNum);
     if (!clean.length) return 0;
     var m = mean(clean);
-    return mean(clean.map(function (v) { return (v - m) * (v - m); }));
+    if (!isFiniteNum(m)) return Infinity;
+    var s = 0;
+    for (var i = 0; i < clean.length; i++) {
+      var d = clean[i] - m, sq = d * d;
+      if (!isFiniteNum(sq)) return Infinity;
+      s += sq;
+    }
+    return s / clean.length;
   }
 
   /* Convenience: variation of a sample around its mean. */
@@ -213,6 +220,7 @@
    * line endings, and a UTF-8 BOM. Blank trailing rows are skipped. */
   function parseCsv(text) {
     text = stripBom(String(text));
+    if (!text.trim()) return [];
     var rows = [];
     var field = "", record = [], inQuotes = false, closedQuote = false, i = 0;
     while (i < text.length) {
@@ -403,6 +411,9 @@
       if (entries > 1024) throw new Error("GTFS ZIP exceeds the 1024 entry limit");
       bounds(offset, size, end);
       var decoder = new TextDecoder("utf-8", { fatal: true }), files = Object.create(null), expanded = 0;
+      function decodeField(slice, what) {
+        try { return decoder.decode(slice); } catch (err) { throw new Error("Invalid ZIP: non-UTF-8 " + what); }
+      }
       var cur = offset;
       for (var e = 0; e < entries; e++) {
         bounds(cur, 46, offset + size);
@@ -412,7 +423,7 @@
         var nameLen = dv.getUint16(cur + 28, true), extraLen = dv.getUint16(cur + 30, true), commentLen = dv.getUint16(cur + 32, true);
         var local = dv.getUint32(cur + 42, true);
         bounds(cur + 46, nameLen + extraLen + commentLen, offset + size);
-        var fullName = decoder.decode(bytes.subarray(cur + 46, cur + 46 + nameLen));
+        var fullName = decodeField(bytes.subarray(cur + 46, cur + 46 + nameLen), "filename");
         var base = fullName.split("/").pop();
         cur += 46 + nameLen + extraLen + commentLen;
         if (!base || !/\.(txt|csv)$/i.test(base)) continue;
@@ -427,14 +438,14 @@
         }
         var localNameLen = dv.getUint16(local + 26, true), localExtraLen = dv.getUint16(local + 28, true);
         bounds(local + 30, localNameLen + localExtraLen, offset);
-        if (decoder.decode(bytes.subarray(local + 30, local + 30 + localNameLen)) !== fullName) throw new Error("Invalid ZIP: filename mismatch");
+        if (decodeField(bytes.subarray(local + 30, local + 30 + localNameLen), "filename") !== fullName) throw new Error("Invalid ZIP: filename mismatch");
         var start = local + 30 + localNameLen + localExtraLen;
         bounds(start, compSize, offset);
         var compressed = bytes.subarray(start, start + compSize);
         var raw = method === 0 ? compressed : inflateRawFallback(compressed, rawSize);
         if (raw.length !== rawSize) throw new Error("Invalid ZIP: expanded size mismatch for " + base);
         if (crc32(raw) !== expectedCrc) throw new Error("Invalid ZIP: CRC32 mismatch for " + base);
-        files[base] = decoder.decode(raw);
+        files[base] = decodeField(raw, "GTFS table " + base);
       }
       if (cur !== offset + size) throw new Error("Invalid ZIP: central directory size mismatch");
       return files;
@@ -446,9 +457,11 @@
    * a Promise of { filename: text }. ZIP detection uses the PK magic bytes;
    * otherwise the input is treated as either loose CSV text or a file map. */
   function normalizeFeedFiles(files) {
-    var out = Object.create(null);
+    var out = Object.create(null), total = 0;
     Object.keys(files).forEach(function (filename) {
       if (typeof files[filename] !== "string") throw new Error("GTFS file maps must contain text values");
+      total += files[filename].length;
+      if (total > MAX_FEED_BYTES) throw new Error("GTFS file map exceeds the 128 MiB text limit");
       var base = filename.split("/").pop().toLowerCase();
       if (/^(agency|routes|stops|trips|stop_times|calendar|calendar_dates)\.csv$/.test(base)) base = base.slice(0, -4) + ".txt";
       if (Object.prototype.hasOwnProperty.call(out, base)) throw new Error("Duplicate GTFS filename " + base);
@@ -457,22 +470,47 @@
     return out;
   }
 
+  /* PK\x03\x04 local file header, PK\x05\x06 empty-archive EOCD, PK\x07\x08
+   * spanned marker: the only legal ways a ZIP begins. */
+  function isZipBytes(bytes) {
+    return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4B &&
+      ((bytes[2] === 3 && bytes[3] === 4) || (bytes[2] === 5 && bytes[3] === 6) ||
+       (bytes[2] === 7 && bytes[3] === 8));
+  }
+
+  /* Identify a single loose CSV table from its header row. */
+  function detectLooseText(text) {
+    var header = stripBom(text).slice(0, 500).split(/\r?\n/)[0].toLowerCase().split(",");
+    var name = header.indexOf("arrival_time") >= 0 && header.indexOf("stop_sequence") >= 0 ? "stop_times.txt" :
+      header.indexOf("stop_lat") >= 0 ? "stops.txt" : header.indexOf("route_type") >= 0 ? "routes.txt" :
+      header.indexOf("exception_type") >= 0 ? "calendar_dates.txt" : header.indexOf("start_date") >= 0 ? "calendar.txt" :
+      header.indexOf("agency_name") >= 0 ? "agency.txt" : header.indexOf("trip_id") >= 0 ? "trips.txt" : null;
+    if (!name) throw new Error("Unrecognized GTFS CSV header");
+    var map = Object.create(null); map[name] = text; return map;
+  }
+
+  /* Binary input: PK magic means ZIP; anything else is decoded as loose
+   * CSV text so a File/Blob of plain CSV still imports. */
+  function readBinaryInput(ab) {
+    var bytes = new Uint8Array(ab);
+    if (bytes.byteLength > MAX_FEED_BYTES) throw new Error("GTFS input exceeds the 128 MiB limit");
+    if (isZipBytes(bytes)) return readZip(ab).then(normalizeFeedFiles);
+    return Promise.resolve().then(function () {
+      return detectLooseText(new TextDecoder("utf-8").decode(bytes));
+    });
+  }
+
   function readFeedFiles(input) {
     if (input && typeof input === "object" && !Array.isArray(input)) {
-      if (input instanceof ArrayBuffer) return readZip(input).then(normalizeFeedFiles);
-      if (ArrayBuffer.isView(input)) return readZip(input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength)).then(normalizeFeedFiles);
-      if (typeof input.arrayBuffer === "function") return input.arrayBuffer().then(readZip).then(normalizeFeedFiles);
+      if (input instanceof ArrayBuffer) return readBinaryInput(input);
+      if (ArrayBuffer.isView(input)) return readBinaryInput(input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength));
+      if (typeof input.arrayBuffer === "function") return Promise.resolve().then(function () { return input.arrayBuffer(); }).then(readBinaryInput);
       return Promise.resolve().then(function () { return normalizeFeedFiles(input); });
     }
     if (typeof input === "string") {
       return Promise.resolve().then(function () {
-        var header = stripBom(input).slice(0, 500).split(/\r?\n/)[0].toLowerCase().split(",");
-        var name = header.indexOf("arrival_time") >= 0 && header.indexOf("stop_sequence") >= 0 ? "stop_times.txt" :
-          header.indexOf("stop_lat") >= 0 ? "stops.txt" : header.indexOf("route_type") >= 0 ? "routes.txt" :
-          header.indexOf("exception_type") >= 0 ? "calendar_dates.txt" : header.indexOf("start_date") >= 0 ? "calendar.txt" :
-          header.indexOf("agency_name") >= 0 ? "agency.txt" : header.indexOf("trip_id") >= 0 ? "trips.txt" : null;
-        if (!name) throw new Error("Unrecognized GTFS CSV header");
-        var map = Object.create(null); map[name] = input; return map;
+        if (input.length > MAX_FEED_BYTES) throw new Error("GTFS input exceeds the 128 MiB limit");
+        return detectLooseText(input);
       });
     }
     return Promise.reject(new Error("Unsupported GTFS input"));
@@ -518,24 +556,29 @@
     var trips = files["trips.txt"] ? parseCsv(files["trips.txt"]) : [];
     var active = Object.create(null), i, row;
     if (!calendar.length && !calDates.length) {
-      trips.forEach(function (t) { if (t.service_id) active[t.service_id] = true; });
+      trips.forEach(function (t) {
+        var tsid = String(t.service_id || "").trim();
+        if (tsid) active[tsid] = true;
+      });
     }
 
     for (i = 0; i < calendar.length; i++) {
       row = calendar[i];
-      var sid = row.service_id;
+      var sid = String(row.service_id || "").trim();
       if (!sid) continue;
       var start = parseYmd(row.start_date), end = parseYmd(row.end_date);
       if (start === null || end === null) continue;
       if (target < start || target > end) continue;
-      if (row[DOW_KEYS[gtfsDowIndex(target)]] === "1") active[sid] = true;
+      if (String(row[DOW_KEYS[gtfsDowIndex(target)]] || "").trim() === "1") active[sid] = true;
     }
 
     for (i = 0; i < calDates.length; i++) {
       row = calDates[i];
-      if (!row.service_id || dateStr(row.date) !== dateStrValue) continue;
-      if (row.exception_type === "1") active[row.service_id] = true;
-      else if (row.exception_type === "2") delete active[row.service_id];
+      var dsid = String(row.service_id || "").trim();
+      if (!dsid || dateStr(row.date) !== dateStrValue) continue;
+      var etype = String(row.exception_type || "").trim();
+      if (etype === "1") active[dsid] = true;
+      else if (etype === "2") delete active[dsid];
     }
 
     return { active: active, error: null };
@@ -552,10 +595,12 @@
 
   /* Utility for consumers that want the direction with the most trips.
    * The parser itself preserves every direction and stop pattern. */
+  function directionOf(t) { var d = String(t.direction_id == null ? "0" : t.direction_id).trim(); return d === "" ? "0" : d; }
+
   function dominantDirection(trips) {
     var counts = Object.create(null), best = "0", bestN = -1;
     for (var i = 0; i < trips.length; i++) {
-      var d = trips[i].direction_id || "0";
+      var d = directionOf(trips[i]);
       counts[d] = (counts[d] || 0) + 1;
       if (counts[d] > bestN) { bestN = counts[d]; best = d; }
     }
@@ -610,7 +655,7 @@
     var agency = ctx.agencyById[route.agency_id] || ctx.firstAgency || {};
     var routeTrips = ctx.trips.filter(function (t) {
       var times = ctx.timesByTrip[t.trip_id];
-      return t.route_id === routeId && (t.direction_id || "0") === directionId && times && stopPattern(times) === pattern;
+      return t.route_id === routeId && directionOf(t) === directionId && times && stopPattern(times) === pattern;
     });
     if (!routeTrips.length) return null;
     var representative = ctx.timesByTrip[routeTrips[0].trip_id];
@@ -674,7 +719,7 @@
 
   function indexStops(stops) {
     var idx = Object.create(null);
-    for (var i = 0; i < stops.length; i++) idx[stops[i].id] = stops[i];
+    for (var i = 0; i < stops.length; i++) if (stops[i] && stops[i].id != null) idx[stops[i].id] = stops[i];
     return idx;
   }
 
@@ -721,10 +766,15 @@
 
       var timesByTrip = Object.create(null);
       var warnings = [];
+      if (trips.length && !("route_id" in trips[0])) warnings.push("trips.txt is missing route_id; its trips cannot be grouped by route.");
+      var knownTripIds = Object.create(null), orphanRows = 0;
+      for (i = 0; i < trips.length; i++) knownTripIds[trips[i].trip_id] = true;
       for (i = 0; i < stopTimes.length; i++) {
         var tid = stopTimes[i].trip_id;
+        if (!knownTripIds[tid]) { orphanRows++; continue; }
         (timesByTrip[tid] || (timesByTrip[tid] = [])).push(stopTimes[i]);
       }
+      if (orphanRows) warnings.push("stop_times.txt lists " + orphanRows + " row(s) for trip_ids missing from trips.txt; ignored.");
 
       for (var tid in timesByTrip) {
         try { timesByTrip[tid] = normalizeGtfsTimes(timesByTrip[tid], stopById, tid); }
@@ -742,7 +792,7 @@
       var calendar = files["calendar.txt"] ? parseCsv(files["calendar.txt"]) : [];
       var hasCalendarData = calendar.length || calDates.length;
       var activeTrips = trips.filter(function (t) {
-        return timesByTrip[t.trip_id] && (!hasCalendarData || active[t.service_id]);
+        return timesByTrip[t.trip_id] && (!hasCalendarData || active[String(t.service_id || "").trim()]);
       });
       if (!activeTrips.length) warnings.push("No usable trips are active on the selected service date.");
 
@@ -771,7 +821,7 @@
       for (i = 0; i < routeIds.length && services.length < maxServices; i++) {
         var routeTrips = byRoute[routeIds[i]], groups = Object.create(null);
         routeTrips.forEach(function (t) {
-          var direction = t.direction_id || "0", pattern = stopPattern(timesByTrip[t.trip_id]);
+          var direction = directionOf(t), pattern = stopPattern(timesByTrip[t.trip_id]);
           (groups[direction] || (groups[direction] = Object.create(null)))[pattern] = true;
         });
         var directions = Object.keys(groups).sort();
@@ -800,7 +850,7 @@
     var exceptions = files["calendar_dates.txt"] ? parseCsv(files["calendar_dates.txt"]) : [];
     var trips = files["trips.txt"] ? parseCsv(files["trips.txt"]) : [];
     var candidates = Object.create(null), weights = Object.create(null), exceptionDays = new Set(exceptions.map(function (r) { return dateStr(r.date); }));
-    trips.forEach(function (t) { weights[t.service_id] = (weights[t.service_id] || 0) + 1; });
+    trips.forEach(function (t) { var sid = String(t.service_id || "").trim(); weights[sid] = (weights[sid] || 0) + 1; });
     function ymd(ms) { var d = new Date(ms); return String(d.getUTCFullYear()).padStart(4, "0") + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()); }
     exceptions.forEach(function (r) { if (parseYmd(r.date) !== null) candidates[dateStr(r.date)] = true; });
     calendar.forEach(function (r) {
@@ -1016,10 +1066,15 @@
     var observed = [], holds = [], holdSec = 0;
     service.trips.forEach(function (trip, t) {
       var times = [];
+      if (!trip || !Array.isArray(trip.stopTimes)) { observed.push(Object.assign({}, trip, { stopTimes: [], startTime: trip ? trip.startTime : 0 })); return; }
       trip.stopTimes.forEach(function (st, i) {
-        var arrival = i ? times[i - 1].departureSec + st.arrivalSec - trip.stopTimes[i - 1].departureSec : st.arrivalSec;
+        if (!st) { var prevT = times[times.length - 1], t0 = prevT ? prevT.departureSec : 0; times.push({ arrivalSec: t0, departureSec: t0 }); return; }
+        var prevSt = trip.stopTimes[i - 1], prevT2 = times[times.length - 1];
+        var arrival = i && prevT2 && prevSt ? prevT2.departureSec + st.arrivalSec - prevSt.departureSec : st.arrivalSec;
         var leader = t ? observed[t - 1].stopTimes[i] : null;
-        if (leader) arrival = Math.max(arrival, leader.departureSec + separation);
+        // leader.departureSec is already integer-stored; ceil keeps the
+        // post-rounding arrival >= departure + separation for fractional seps.
+        if (leader) arrival = Math.max(arrival, Math.ceil(leader.departureSec + separation));
         var hold = leader && options.regulate ? Math.max(0, leader.arrivalSec + service.plannedHeadwaySec * spacingRatio - arrival) : 0;
         var roundedHold = hold > 0 ? Math.round(hold) : 0;
         var dwell = st.departureSec - st.arrivalSec;
@@ -1037,12 +1092,17 @@
         }
         times.push(Object.assign({}, st, { arrivalSec: Math.round(arrival), departureSec: Math.round(arrival + dwell) }));
       });
-      observed.push(Object.assign({}, trip, { stopTimes: times, startTime: times[0].arrivalSec }));
+      observed.push(Object.assign({}, trip, { stopTimes: times, startTime: times.length ? times[0].arrivalSec : trip.startTime }));
     });
-    var terminalDelays = observed.map(function (t, i) { return t.stopTimes[t.stopTimes.length - 1].arrivalSec - service.trips[i].stopTimes[service.trips[i].stopTimes.length - 1].arrivalSec; });
+    var terminalDelays = observed.map(function (t, i) {
+      var schedTimes = service.trips[i] && Array.isArray(service.trips[i].stopTimes) ? service.trips[i].stopTimes : [];
+      var schedLast = schedTimes[schedTimes.length - 1];
+      var obsLast = t.stopTimes[t.stopTimes.length - 1];
+      return obsLast && schedLast ? obsLast.arrivalSec - schedLast.arrivalSec : 0;
+    });
     return {
-      observedTrips: observed, holds: holds, incidentTripId: service.trips[incidentTrip].tripId,
-      incidentStopId: service.stops[incidentStop].id, incidentSec: incidentSec, minSeparationSec: separation,
+      observedTrips: observed, holds: holds, incidentTripId: service.trips[incidentTrip] ? service.trips[incidentTrip].tripId : null,
+      incidentStopId: service.stops[incidentStop] ? service.stops[incidentStop].id : null, incidentSec: incidentSec, minSeparationSec: separation,
       spacingRatio: spacingRatio, regulated: !!options.regulate,
       delayedTrips: terminalDelays.filter(function (d) { return d > 0; }).length,
       totalTerminalDelaySec: sum(terminalDelays), maxDelaySec: Math.max.apply(null, terminalDelays), holdSec: Math.round(holdSec)
@@ -1055,23 +1115,37 @@
     var errors = [], checks = 0, roundTrips = 0;
     if (!service || !Array.isArray(service.trips) || !Array.isArray(service.stops)) return { passed: false, checks: 0, roundTrips: 0, errors: ["Missing service arrays"] };
     if (!service.trips.length || !service.stops.length) errors.push("Empty timetable");
+    if (service.observedTrips != null && !Array.isArray(service.observedTrips)) errors.push("Observed trips layer is not an array");
     var index = indexStops(service.stops);
-    [service.trips, service.observedTrips].filter(Array.isArray).forEach(function (trips) {
-      trips.forEach(function (trip) {
-        if (!Array.isArray(trip.stopTimes) || !trip.stopTimes.length) errors.push("Missing stop times in " + trip.tripId);
+    var seenStopIds = Object.create(null), prevStopMiles = -Infinity;
+    service.stops.forEach(function (s) {
+      checks++;
+      if (s == null || s.id == null || seenStopIds[s.id]) errors.push("Duplicate or missing station id");
+      else seenStopIds[s.id] = true;
+      if (!s || !isFiniteNum(s.miles) || s.miles < 0) errors.push("Invalid station milepost");
+      else { if (s.miles < prevStopMiles) errors.push("Decreasing station mileposts"); prevStopMiles = s.miles; }
+      if (!s || !isFiniteNum(s.lat) || !isFiniteNum(s.lon) || Math.abs(s.lat) > 90 || Math.abs(s.lon) > 180) errors.push("Invalid station coordinates");
+    });
+    [service.trips, service.observedTrips].filter(Array.isArray).forEach(function (trips, layerIdx) {
+      var tag = layerIdx ? "observed " : "";
+      trips.forEach(function (trip, ti) {
+        var label = tag + (trip && trip.tripId != null ? trip.tripId : "trip " + ti);
+        if (!trip || !Array.isArray(trip.stopTimes)) { errors.push("Missing stop times in " + label); return; }
+        if (!trip.stopTimes.length) errors.push("Missing stop times in " + label);
         var previous = -Infinity, prevMiles = -Infinity;
-        (trip.stopTimes || []).forEach(function (st) {
+        trip.stopTimes.forEach(function (st) {
+          if (!st) { errors.push("Missing stop time in " + label); return; }
           checks += 3;
-          if (!index[st.stopId]) errors.push("Unknown station in " + trip.tripId);
-          if (!isFiniteNum(st.miles) || st.miles < 0) errors.push("Invalid distance in " + trip.tripId);
+          if (!index[st.stopId]) errors.push("Unknown station in " + label);
+          if (!isFiniteNum(st.miles) || st.miles < 0) errors.push("Invalid distance in " + label);
           else {
-            if (st.miles < prevMiles) errors.push("Decreasing distance in " + trip.tripId);
+            if (st.miles < prevMiles) errors.push("Decreasing distance in " + label);
             prevMiles = st.miles;
           }
-          if (st.arrivalSec < previous || st.departureSec < st.arrivalSec) errors.push("Decreasing times in " + trip.tripId);
+          if (st.arrivalSec < previous || st.departureSec < st.arrivalSec) errors.push("Decreasing times in " + label);
           [st.arrivalSec, st.departureSec].forEach(function (sec) {
             checks++; roundTrips++;
-            if (!isFiniteNum(sec) || sec < 0 || parseGtfsTime(formatGtfsTime(sec)) !== Math.round(sec)) errors.push("Timestamp round trip failed in " + trip.tripId);
+            if (!isFiniteNum(sec) || sec < 0 || parseGtfsTime(formatGtfsTime(sec)) !== Math.round(sec)) errors.push("Timestamp round trip failed in " + label);
           });
           previous = st.departureSec;
         });
@@ -1149,7 +1223,7 @@
    * the schedule (for delay comparisons). */
   function selectTrips(service, options) {
     options = options || {};
-    var observed = service.observedTrips;
+    var observed = Array.isArray(service.observedTrips) ? service.observedTrips : null;
     var scheduled = service.trips;
     var layer = options.layer || (observed ? "observed" : "scheduled");
     if (options.trips) {
@@ -1452,7 +1526,7 @@
         miles: stop.miles || 0,
         plannedDwellSec: planned,
         stats: stats,
-        meanDeltaSec: stats.mean - planned
+        meanDeltaSec: stats.count ? stats.mean - planned : 0
       });
     }
 
@@ -1488,6 +1562,7 @@
     var stopDelays = Object.create(null);
     var unmatchedObservations = 0;
     var earlyThresholdSec = options.earlyThresholdSec == null ? onTimeThresholdSec : options.earlyThresholdSec;
+    if (!isFiniteNum(onTimeThresholdSec) || onTimeThresholdSec < 0 || !isFiniteNum(earlyThresholdSec) || earlyThresholdSec < 0) throw new Error("Invalid delay tolerance");
 
     for (i = 0; i < primary.length; i++) {
       var trip = primary[i];
@@ -1532,6 +1607,130 @@
       perTrip: perTrip,
       perStop: perStop
     };
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Export helpers: formula-safe CSV and SHA-256 integrity
+   * ------------------------------------------------------------------ */
+
+  /* One RFC 4180 cell. Spreadsheet formula safety: any text cell whose first
+   * non-whitespace character is = + - @ or an apostrophe gets a leading
+   * apostrophe so spreadsheet apps keep it as text rather than evaluating
+   * it. JavaScript \s covers tabs, LF, CR, vertical tab, form feed and the
+   * Unicode space separators. Numbers stay bare - they cannot carry a
+   * formula. */
+  function csvCell(value) {
+    var s = value == null ? "" : String(value);
+    if (typeof value === "number" && !isFiniteNum(value)) return "";
+    if (typeof value !== "number" && /^\s*[=+\-@']/.test(s)) s = "'" + s;
+    if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  /* Write rows to CSV text. columns: [{ key, label }] or
+   * [{ label, value(row) }]. Lines join with CRLF and the text ends with a
+   * final CRLF, matching RFC 4180. */
+  function toCsv(columns, rows) {
+    var lines = [columns.map(function (c) { return csvCell(c.label != null ? c.label : c.key); }).join(",")];
+    (rows || []).forEach(function (r) {
+      lines.push(columns.map(function (c) {
+        return csvCell(typeof c.value === "function" ? c.value(r) : r[c.key]);
+      }).join(","));
+    });
+    return lines.join("\r\n") + "\r\n";
+  }
+
+  /* Synchronous SHA-256 (FIPS 180-4) over a string or byte array, returned
+   * as lowercase hex. Dependency free so exports work identically in the
+   * browser, Node, and the DOM test fixture. */
+  function sha256Hex(input) {
+    var bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+    if (!bytes || typeof bytes.length !== "number") bytes = new Uint8Array(0);
+    var K = [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    ];
+    var h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var total = Math.ceil((bytes.length + 9) / 64) * 64;
+    var msg = new Uint8Array(total);
+    msg.set(bytes);
+    msg[bytes.length] = 0x80;
+    var dv = new DataView(msg.buffer);
+    dv.setUint32(total - 8, Math.floor(bytes.length / 536870912));
+    dv.setUint32(total - 4, (bytes.length * 8) >>> 0);
+    var w = new Int32Array(64), i, off;
+    function rr(x, n) { return (x >>> n) | (x << (32 - n)); }
+    for (off = 0; off < total; off += 64) {
+      for (i = 0; i < 16; i++) w[i] = dv.getInt32(off + i * 4);
+      for (i = 16; i < 64; i++) {
+        var s0 = rr(w[i - 15], 7) ^ rr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+        var s1 = rr(w[i - 2], 17) ^ rr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      var a = h[0] | 0, b = h[1] | 0, c = h[2] | 0, d = h[3] | 0;
+      var e = h[4] | 0, f = h[5] | 0, g = h[6] | 0, hh = h[7] | 0;
+      for (i = 0; i < 64; i++) {
+        var S1 = rr(e, 6) ^ rr(e, 11) ^ rr(e, 25);
+        var ch = (e & f) ^ (~e & g);
+        var t1 = (hh + S1 + ch + K[i] + w[i]) | 0;
+        var S0 = rr(a, 2) ^ rr(a, 13) ^ rr(a, 22);
+        var maj = (a & b) ^ (a & c) ^ (b & c);
+        var t2 = (S0 + maj) | 0;
+        hh = g; g = f; f = e; e = (d + t1) | 0;
+        d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0;
+      h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+    }
+    var out = "";
+    for (i = 0; i < 8; i++) out += ("00000000" + (h[i] >>> 0).toString(16)).slice(-8);
+    return out;
+  }
+
+  /* Flatten a report's per-station headway, dwell and delay measurements into
+   * one CSV table. Station names come from untrusted feed data, so every
+   * cell passes through the formula-safe writer. */
+  function reportCsv(report) {
+    var delayBy = Object.create(null), dwellBy = Object.create(null), headBy = Object.create(null);
+    (report.delay && report.delay.perStop || []).forEach(function (p) { delayBy[p.stopId] = p; });
+    (report.dwell && report.dwell.perStop || []).forEach(function (p) { dwellBy[p.stopId] = p; });
+    (report.headways && report.headways.perStop || []).forEach(function (p) { headBy[p.stopId] = p; });
+    var stops = (report.stringline && report.stringline.stops) || [];
+    var columns = [
+      { key: "stop", label: "station" }, { key: "code", label: "code" },
+      { key: "milepost_mi", label: "milepost_mi" },
+      { key: "mean_headway_s", label: "mean_headway_s" },
+      { key: "headway_cv", label: "headway_cv" },
+      { key: "headway_samples", label: "headway_samples" },
+      { key: "planned_dwell_s", label: "planned_dwell_s" },
+      { key: "mean_dwell_s", label: "mean_dwell_s" },
+      { key: "dwell_delta_s", label: "dwell_delta_s" },
+      { key: "mean_delay_s", label: "mean_delay_s" },
+      { key: "p90_delay_s", label: "p90_delay_s" },
+      { key: "delay_samples", label: "delay_samples" }
+    ];
+    var rows = stops.map(function (s) {
+      var hp = headBy[s.id] || { stats: {} }, wp = dwellBy[s.id] || { stats: {} }, dp = delayBy[s.id] || { stats: {} };
+      return {
+        stop: s.name, code: s.code, milepost_mi: s.miles,
+        mean_headway_s: round(hp.stats.mean || 0, 1),
+        headway_cv: round(hp.stats.cv || 0, 3),
+        headway_samples: hp.stats.count || 0,
+        planned_dwell_s: round(wp.plannedDwellSec || 0, 0),
+        mean_dwell_s: round(wp.stats.mean || 0, 1),
+        dwell_delta_s: round(wp.meanDeltaSec || 0, 1),
+        mean_delay_s: round(dp.stats.mean || 0, 1),
+        p90_delay_s: round(dp.stats.p90 || 0, 1),
+        delay_samples: dp.stats.count || 0
+      };
+    });
+    return toCsv(columns, rows);
   }
 
   /* ------------------------------------------------------------------ *
@@ -1613,6 +1812,13 @@
     splitCsvRow: splitCsvRow,
     readZip: readZip,
     readFeedFiles: readFeedFiles,
+    isZipBytes: isZipBytes,
+    MAX_FEED_BYTES: MAX_FEED_BYTES,
+    // export
+    csvCell: csvCell,
+    toCsv: toCsv,
+    sha256Hex: sha256Hex,
+    reportCsv: reportCsv,
     // gtfs
     resolveActiveServices: resolveActiveServices,
     parseGtfs: parseGtfs,

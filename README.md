@@ -32,7 +32,7 @@ The wait penalty falls by 19.5%, while the sum of terminal delays increases. The
 - Provides exact train and station inspection through pointer hover or keyboard focus. A selected train has an arrival, departure, dwell, and schedule-offset ledger.
 - Computes headway distribution, coefficient of variation, bunching, service gaps, finite-distribution excess wait, station dwell overrun, and matched arrival delay.
 - Imports a GTFS ZIP or a group of CSV files locally. Supports after-midnight service clocks, weekly calendars and date exceptions, direction and stop-pattern grouping, loop visits, and interpolation of untimed interior stops.
-- Verifies timestamps by formatting and parsing them back through the GTFS service-day clock. Both showcase layers pass **2,112 timestamp round trips and 5,280 timetable checks**.
+- Verifies timestamps by formatting and parsing them back through the GTFS service-day clock. Both showcase layers pass **2,112 timestamp round trips and 5,313 timetable checks**.
 - Downloads a JSON dispatch report containing the measured results, active scenario, validation counts, and modeling assumptions.
 
 Seven bundled examples cover named NEC, Houston METRORail, Caltrain, and CTA corridors. Their station sequences, mileposts, and coordinates are simplified teaching fixtures. They are not agency schedules, surveyed rail geometry, or live observations. Uploaded GTFS supplies the agency's planned stop times. Imported distance axes use cumulative haversine estimates between stops because GTFS `shape_dist_traveled` has no universal unit.
@@ -70,16 +70,16 @@ node --test tests/
 Verified locally on Node v26.8.1:
 
 ```text
- tests 105
+ tests 202
  suites 0
- pass 105
+ pass 202
  fail 0
  cancelled 0
  skipped 0
  todo 0
 ```
 
-There are **88 engine and import tests** and **17 DOM runtime tests**. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
+There are **88 engine and import tests**, **97 adversarial hardening tests**, and **17 DOM runtime tests**. The hardening suite attacks the GTFS reader with forged ZIP structures (split markers, ZIP64 sentinels, entry-count lies, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV text, overnight service-day times past `25:00:00`, prototype-pollution keys, and stale-upload races. It also asserts the transit math directly: sample-sigma headway CV, population-variance excess wait, monotone stringlines on every corridor, follower separation and dwell invariants under the cascade model, formula-safe CSV export cells, and the exported SHA-256 report digest. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
 
 Syntax checks:
 
@@ -87,7 +87,7 @@ Syntax checks:
 for file in app.js engine.js corridors.js tests/*.js; do node --check "$file" || exit 1; done
 ```
 
-All five JavaScript files passed. Tests generate ZIP bytes and feed fixtures in memory; no downloaded feed, runtime dependency, cache, or temporary artifact is required.
+All seven JavaScript files passed. Tests generate ZIP bytes and feed fixtures in memory; no downloaded feed, runtime dependency, cache, or temporary artifact is required.
 
 ## Engine API
 
@@ -121,7 +121,9 @@ console.log(report.headways.excessWaitSec, run.totalTerminalDelaySec);
 | `corridors.js` | Seven simplified synthetic corridor fixtures |
 | `app.js` | SVG rendering, inspections, presets, import handling, and report download |
 | `index.html`, `style.css` | Accessible dispatch workspace and responsive palettes |
-| `tests/railpulse.test.js` | 86 numerical, parser, archive, and integration tests |
+| `tests/railpulse.test.js` | 88 numerical, parser, archive, and integration tests |
+| `tests/hardening.test.js` | 78 adversarial parser, math-invariant, export, and race tests |
+| `tests/dom-fixture.js` | shared deterministic DOM harness (not a test file) |
 | `tests/ui.test.js` | 17 DOM runtime and interaction tests |
 | `DEVPOST_UPGRADE.md` | Submission copy with measured evidence |
 
