@@ -27,7 +27,11 @@
     timeWindow: "focus",
     feedFiles: null,
     feedRequest: 0,
-    shortcutsEnabled: true
+    shortcutsEnabled: true,
+    labStrategy: "even",
+    labEvent: "surge",
+    lab: null,
+    labBase: null
   };
 
   /* ---------------------------------------------------------------- *
@@ -895,6 +899,244 @@
   }
 
   /* ---------------------------------------------------------------- *
+   * Dispatch laboratory: headway-control and signaling comparator
+   * ---------------------------------------------------------------- */
+  function labDomain(lab, base) {
+    var end = lab.scenario.incidentEndSec || base.startSec || 0;
+    var lo = base.startSec != null ? base.startSec : end - 5400;
+    var hi = base.endSec != null ? base.endSec : end + 5400;
+    var domain = [Math.max(lo, end - 3600), Math.min(hi, end + 5400)];
+    if (domain[1] - domain[0] < 600) domain[1] = domain[0] + 600;
+    return domain;
+  }
+
+  function drawLabChart(svgId, base, sim, domain, colorFor) {
+    var svg = $(svgId);
+    clear(svg);
+    var data = E.buildStringline(E.withObserved(base, sim.observedTrips), { timeRange: domain });
+    var stops = data.stops;
+    var W = 470, H = 300, padL = 66, padR = 14, padT = 24, padB = 30;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var x = scale(domain[0], domain[1], padL, W - padR);
+    var mMax = data.milesDomain[1] || 1;
+    var y = scale(0, mMax, padT + plotH, padT);
+    var clipId = svgId + "Clip";
+    var defs = el("defs", {}, svg), clip = el("clipPath", { id: clipId }, defs);
+    el("rect", { x: padL, y: padT, width: plotW, height: plotH }, clip);
+
+    var lastY = Infinity;
+    stops.forEach(function (s, idx) {
+      var gy = y(s.miles);
+      var terminal = idx === 0 || idx === stops.length - 1;
+      el("line", { x1: padL, x2: W - padR, y1: gy.toFixed(1), y2: gy.toFixed(1), class: terminal ? "axis-line" : "station-rule" }, svg);
+      if (terminal || Math.abs(gy - lastY) >= 22) {
+        lastY = gy;
+        var lbl = el("text", { x: padL - 6, y: (gy + 3.5).toFixed(1), "text-anchor": "end", class: "axis-text" }, svg);
+        lbl.textContent = s.code;
+      }
+    });
+    for (var i = 0; i <= 4; i++) {
+      var tv = domain[0] + (domain[1] - domain[0]) * i / 4, gx = x(tv);
+      el("line", { x1: gx.toFixed(1), x2: gx.toFixed(1), y1: padT, y2: padT + plotH, class: "grid-line" }, svg);
+      var tl = el("text", { x: gx.toFixed(1), y: padT + plotH + 15, "text-anchor": "middle", class: "axis-text tabular" }, svg);
+      tl.textContent = fmtClock(tv);
+    }
+    var ix = x(sim.perturbation.incidentEndSec);
+    if (ix >= padL && ix <= W - padR) {
+      el("line", { x1: ix.toFixed(1), x2: ix.toFixed(1), y1: padT, y2: padT + plotH, class: "crosshair" }, svg);
+      var il = el("text", { x: (ix + 3).toFixed(1), y: padT - 8, "text-anchor": "start", class: "axis-text" }, svg);
+      il.textContent = "event ends";
+    }
+    var traces = el("g", { "clip-path": "url(#" + clipId + ")" }, svg);
+    data.lines.forEach(function (line) {
+      var d = line.points.map(function (p, k) {
+        return (k ? "L" : "M") + x(p.timeSec).toFixed(1) + "," + y(p.miles).toFixed(1);
+      }).join(" ");
+      el("path", { d: d, class: "line-path", stroke: colorFor(line.tripId), "stroke-width": 1.5 }, traces);
+    });
+    // Hollow squares mark stations an express trip ran through without calling.
+    sim.observedTrips.forEach(function (trip) {
+      trip.stopTimes.forEach(function (st) {
+        if (!st.skipped) return;
+        var px = x(st.arrivalSec), py = y(st.miles);
+        if (px >= padL && px <= W - padR && py >= padT && py <= padT + plotH) {
+          el("rect", { x: (px - 3).toFixed(1), y: (py - 3).toFixed(1), width: 6, height: 6, fill: "none", stroke: cssVar("--series-2"), "stroke-width": 1.4 }, traces);
+        }
+      });
+    });
+    if (!data.lines.length) {
+      var empty = el("text", { x: padL + plotW / 2, y: padT + plotH / 2, "text-anchor": "middle", class: "axis-text" }, svg);
+      empty.textContent = "No trains in this window.";
+    }
+  }
+
+  function drawLabCv(lab) {
+    var svg = $("labCvChart");
+    clear(svg);
+    var base = lab.strategies[0].sim;
+    var sel = lab.strategies.find(function (s) { return s.id === state.labStrategy; }) || lab.strategies[0];
+    var hwBase = E.collectHeadways(state.labBase, base.observedTrips);
+    var hwSel = E.collectHeadways(state.labBase, sel.sim.observedTrips);
+    var cvByStop = Object.create(null), cvSelByStop = Object.create(null);
+    hwBase.perStop.forEach(function (ps) {
+      var w = E.expectedWaitSec(ps.headways);
+      cvByStop[ps.stopId] = w.cvHeadway;
+    });
+    hwSel.perStop.forEach(function (ps) {
+      var w = E.expectedWaitSec(ps.headways);
+      cvSelByStop[ps.stopId] = w.cvHeadway;
+    });
+    var stops = state.labBase.stops;
+    var W = 980, H = 190, padL = 40, padR = 8, padT = 20, padB = 34;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var maxV = 0.01;
+    stops.forEach(function (s) {
+      maxV = Math.max(maxV, cvByStop[s.id] || 0, cvSelByStop[s.id] || 0);
+    });
+    maxV = Math.ceil(maxV * 5) / 5 || 0.2;
+    var y = scale(0, maxV, padT + plotH, padT);
+    [0, 0.5, 1].forEach(function (f) {
+      var gv = maxV * f, gy = y(gv);
+      el("line", { x1: padL, x2: W - padR, y1: gy.toFixed(1), y2: gy.toFixed(1), class: f === 0 ? "axis-line" : "grid-line" }, svg);
+      var lbl = el("text", { x: padL - 6, y: (gy + 3.5).toFixed(1), "text-anchor": "end", class: "axis-text tabular" }, svg);
+      lbl.textContent = f === 0 ? "0" : fmtNum(gv, 1);
+    });
+    var slot = plotW / Math.max(1, stops.length);
+    var barW = Math.max(2, Math.min(9, slot * 0.32));
+    var cBase = cssVar("--axis"), cSel = cssVar("--series-3");
+    var labelEvery = Math.ceil(stops.length / 22);
+    stops.forEach(function (s, i) {
+      var cx = padL + slot * (i + 0.5);
+      var b0 = y(cvByStop[s.id] || 0), b1 = y(cvSelByStop[s.id] || 0);
+      el("rect", { x: (cx - barW - 0.5).toFixed(1), y: b0.toFixed(1), width: barW.toFixed(1), height: (padT + plotH - b0).toFixed(1), fill: cBase }, svg);
+      var r2 = el("rect", { x: (cx + 0.5).toFixed(1), y: b1.toFixed(1), width: barW.toFixed(1), height: (padT + plotH - b1).toFixed(1), fill: cSel, class: "hit", "aria-label": s.code + " CV " + fmtNum(cvSelByStop[s.id] || 0, 3) }, svg);
+      r2.addEventListener("pointermove", function (ev) {
+        showTip(ev.clientX, ev.clientY, s.code, s.name, [
+          { name: "Baseline CV", value: fmtNum(cvByStop[s.id] || 0, 3), color: cBase },
+          { name: sel.shortName + " CV", value: fmtNum(cvSelByStop[s.id] || 0, 3), color: cSel },
+          { name: "Arrivals", value: String((hwSel.perStop[i] || {}).arrivals || 0) }
+        ]);
+      });
+      r2.addEventListener("pointerleave", hideTip);
+      if (i % labelEvery === 0 || i === stops.length - 1) {
+        var sl = el("text", { x: cx.toFixed(1), y: padT + plotH + 14, "text-anchor": "middle", class: "axis-text" }, svg);
+        sl.textContent = s.code;
+      }
+    });
+    renderLegend($("labCvLegend"), [
+      { label: "Fixed-block baseline", color: cBase },
+      { label: sel.shortName, color: cSel }
+    ]);
+  }
+
+  function renderLabTable(lab) {
+    var cols = [
+      { key: "strategy", label: "strategy" },
+      { key: "cv", label: "headway CV", num: true },
+      { key: "ew", label: "E[W] s", num: true },
+      { key: "excess", label: "excess wait s", num: true },
+      { key: "viol", label: "min-headway viol", num: true },
+      { key: "bunch", label: "bunching", num: true },
+      { key: "rec", label: "recovery min", num: true },
+      { key: "hold", label: "holds s", num: true },
+      { key: "skips", label: "skips", num: true },
+      { key: "cap", label: "peak tph", num: true },
+      { key: "delay", label: "terminal delay s", num: true }
+    ];
+    var rows = lab.strategies.map(function (s) {
+      var m = s.metrics;
+      return {
+        strategy: s.shortName,
+        cv: m.cvHeadway, ew: m.expectedWaitSec, excess: m.excessWaitSec,
+        viol: m.minHeadwayViolations, bunch: (m.bunchRate * 100).toFixed(1) + "%",
+        rec: m.recoveryMin, hold: m.totalHoldSec, skips: m.skippedStops,
+        cap: s.signaling.peakThroughputTrainsPerHr, delay: m.totalTerminalDelaySec
+      };
+    });
+    renderTable($("labTable"), { columns: cols, rows: rows });
+    var table = $("labTable").children[0];
+    if (table && table.children[1]) {
+      var trs = table.children[1].children;
+      lab.strategies.forEach(function (s, i) {
+        if (trs[i] && s.id === state.labStrategy) trs[i].className = "lab-active";
+      });
+    }
+  }
+
+  function renderLab(base) {
+    if (!$("labStrategy") || !base) return;
+    state.labBase = base;
+    var lab = E.runDispatchLab(base, { event: state.labEvent });
+    state.lab = lab;
+    var sel = lab.strategies.find(function (s) { return s.id === state.labStrategy; }) || lab.strategies[0];
+    $("labScenario").textContent = "Perturbation: " + lab.scenario.description + ". Strategy: " + sel.name + " - " + sel.blurb;
+    $("labStrategyTitle").textContent = sel.name;
+    var domain = labDomain(lab, base);
+    var maxDelay = 60;
+    lab.strategies.forEach(function (s) {
+      s.sim.observedTrips.forEach(function (trip, i) {
+        var schedTimes = base.trips[i] ? base.trips[i].stopTimes : [];
+        var schedLast = schedTimes[schedTimes.length - 1];
+        var obsLast = trip.stopTimes[trip.stopTimes.length - 1];
+        if (schedLast && obsLast) maxDelay = Math.max(maxDelay, Math.abs(obsLast.arrivalSec - schedLast.arrivalSec));
+      });
+    });
+    var schedIndex = Object.create(null);
+    base.trips.forEach(function (t) { schedIndex[t.tripId] = t; });
+    function colorFor(sim) {
+      var obsIndex = Object.create(null);
+      sim.observedTrips.forEach(function (t) { obsIndex[t.tripId] = t; });
+      return function (tripId) {
+        var sched = schedIndex[tripId], obsTrip = obsIndex[tripId];
+        if (!sched || !obsTrip) return cssVar("--series-1");
+        var schedLast = sched.stopTimes[sched.stopTimes.length - 1];
+        var obsLast = obsTrip.stopTimes[obsTrip.stopTimes.length - 1];
+        var d = obsLast && schedLast ? obsLast.arrivalSec - schedLast.arrivalSec : 0;
+        return diverging(d / maxDelay);
+      };
+    }
+    drawLabChart("labBaselineChart", base, lab.strategies[0].sim, domain, colorFor(lab.strategies[0].sim));
+    drawLabChart("labStrategyChart", base, sel.sim, domain, colorFor(sel.sim));
+    drawLabCv(lab);
+    renderLabTable(lab);
+    var a = lab.assumptions;
+    $("labAssumptionNote").textContent = a[0] + " " + a[4] + " The audit digest is an unkeyed SHA-256 tamper-detection checksum, not authentication.";
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Share-link bookmarking (#rp= strict bookmarks)
+   * ---------------------------------------------------------------- */
+  function currentBookmark() {
+    var bm = { v: 1, svc: state.serviceId, layer: state.layer, int: state.intensity, win: state.timeWindow };
+    if (state.scenario) bm.sc = state.scenario;
+    bm.lab = { strategy: state.labStrategy, event: state.labEvent };
+    return bm;
+  }
+  function syncHash() {
+    try {
+      if (typeof history === "undefined" || !history || typeof history.replaceState !== "function") return;
+      history.replaceState(null, "", E.encodeRpHash(currentBookmark()));
+    } catch (err) { /* bookmarking must never break rendering */ }
+  }
+  function applyBookmark() {
+    var hash = "";
+    try { hash = (typeof location !== "undefined" && location && location.hash) || ""; } catch (err) { return; }
+    var bm = E.decodeRpHash(hash);
+    if (!bm) return;
+    if (bm.svc && state.baseServices.some(function (s) { return s.id === bm.svc; })) state.serviceId = bm.svc;
+    if (bm.layer) { state.layer = bm.layer; $("layerSelect").value = bm.layer; }
+    if (bm.int != null) { state.intensity = bm.int; $("intensitySelect").value = String(bm.int); }
+    if (bm.sc) state.scenario = bm.sc;
+    else state.scenario = null;
+    if (bm.win) { state.timeWindow = bm.win; $("timeWindow").value = bm.win; }
+    if (bm.lab) {
+      state.labStrategy = bm.lab.strategy; state.labEvent = bm.lab.event;
+      if ($("labStrategy")) $("labStrategy").value = bm.lab.strategy;
+      if ($("labEvent")) $("labEvent").value = bm.lab.event;
+    }
+  }
+
+  /* ---------------------------------------------------------------- *
    * Orchestrator
    * ---------------------------------------------------------------- */
   function render() {
@@ -944,6 +1186,8 @@
     drawDwell(report);
     drawDelay(report);
     drawEvents(report);
+    renderLab(base);
+    syncHash();
   }
 
   function populateServiceSelect() {
@@ -956,6 +1200,30 @@
       sel.appendChild(opt);
     });
     if (state.serviceId) sel.value = state.serviceId;
+  }
+
+  function populateLabControls() {
+    var st = $("labStrategy"), ev = $("labEvent");
+    if (st) {
+      clear(st);
+      E.labStrategies().forEach(function (s) {
+        var opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = s.name;
+        st.appendChild(opt);
+      });
+      st.value = state.labStrategy;
+    }
+    if (ev) {
+      clear(ev);
+      E.labEvents().forEach(function (p) {
+        var opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.name;
+        ev.appendChild(opt);
+      });
+      ev.value = state.labEvent;
+    }
   }
 
   function setTheme(dark) {
@@ -1111,6 +1379,87 @@
       var url = URL.createObjectURL(blob), link = document.createElement("a");
       link.href = url; link.download = "railpulse-stations.csv"; document.body.appendChild(link); link.click(); document.body.removeChild(link); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     });
+    function downloadText(name, text, type) {
+      var blob = new Blob([text], { type: type });
+      var url = URL.createObjectURL(blob), link = document.createElement("a");
+      link.href = url; link.download = name; document.body.appendChild(link); link.click(); document.body.removeChild(link); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+    $("labStrategy").addEventListener("change", function (e) {
+      state.labStrategy = e.target.value; renderLab(state.labBase); syncHash();
+    });
+    $("labEvent").addEventListener("change", function (e) {
+      state.labEvent = e.target.value; renderLab(state.labBase); syncHash();
+    });
+    $("labExportJson").addEventListener("click", function () {
+      if (!state.lab) return;
+      downloadText("railpulse-audit.json", JSON.stringify(E.auditJson(state.lab), null, 2), "application/json");
+      $("labStatus").textContent = "Audit brief downloaded with SHA-256 digest";
+      $("labStatus").className = "lab-status ok";
+    });
+    $("labExportCsv").addEventListener("click", function () {
+      if (!state.lab) return;
+      downloadText("railpulse-audit.csv", E.auditCsv(state.lab), "text/csv");
+      $("labStatus").textContent = "Audit CSV downloaded";
+      $("labStatus").className = "lab-status ok";
+    });
+    $("labExportMd").addEventListener("click", function () {
+      if (!state.lab) return;
+      downloadText("railpulse-audit.md", E.auditMarkdown(state.lab), "text/markdown");
+      $("labStatus").textContent = "Audit Markdown downloaded";
+      $("labStatus").className = "lab-status ok";
+    });
+    $("labBookmark").addEventListener("click", function () {
+      syncHash();
+      var status = $("labStatus"), hash = "";
+      try { hash = (typeof location !== "undefined" && location && location.hash) || ""; } catch (err) { /* ignore */ }
+      var link = "";
+      try { link = (typeof location !== "undefined" && location && location.href) || hash; } catch (err2) { link = hash; }
+      var copied = false;
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          var p = navigator.clipboard.writeText(link);
+          if (p && typeof p.catch === "function") p.catch(function () { /* clipboard denied is non-fatal */ });
+          copied = true;
+        } catch (err3) { copied = false; }
+      }
+      status.textContent = copied ? "Share link copied to clipboard" : "Share link is in the address bar" + (hash ? " (" + hash.slice(0, 28) + "...)" : "");
+      status.className = "lab-status ok";
+    });
+    $("labVerifyBtn").addEventListener("click", function () {
+      var status = $("labVerifyStatus"), text = $("labVerifyInput").value;
+      var check;
+      if (!text.trim() && state.lab) {
+        check = E.verifyAudit(E.auditJson(state.lab));
+      } else {
+        check = E.verifyAudit(text);
+      }
+      status.textContent = check.valid ? "Digest verified - the brief is unmodified" : "Not verified: " + check.reason;
+      status.className = "lab-status " + (check.valid ? "ok" : "bad");
+    });
+    $("labSelfTests").addEventListener("click", function () {
+      var results = E.runSelfTests();
+      var list = $("selfTestList");
+      clear(list);
+      var passed = 0;
+      results.forEach(function (r) {
+        if (r.pass) passed++;
+        var row = document.createElement("div");
+        row.className = "selftest-row " + (r.pass ? "pass" : "fail");
+        var mark = document.createElement("span");
+        mark.className = "st-mark";
+        mark.textContent = r.pass ? "PASS" : "FAIL";
+        var body = document.createElement("span");
+        body.textContent = r.name;
+        var detail = document.createElement("span");
+        detail.className = "st-detail";
+        detail.textContent = " - " + r.detail;
+        row.appendChild(mark); row.appendChild(body); row.appendChild(detail);
+        list.appendChild(row);
+      });
+      var summary = $("selfTestSummary");
+      summary.textContent = passed + " / " + results.length + " self-tests pass";
+      summary.className = "lab-status " + (passed === results.length ? "ok" : "bad");
+    });
     $("themeToggle").addEventListener("click", function () {
       setTheme(document.documentElement.getAttribute("data-theme") !== "dark");
     });
@@ -1131,6 +1480,9 @@
     state.baseServices = E.buildAllSyntheticServices();
     state.serviceId = "cta-red";
     populateServiceSelect();
+    populateLabControls();
+    applyBookmark();
+    if (state.serviceId) $("serviceSelect").value = state.serviceId;
     var prov = (window.RailPulse && window.RailPulse.CORRIDOR_PROVENANCE) || [];
     $("provenance").textContent = "Timetable provenance: " + prov.join(" ");
     render();

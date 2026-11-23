@@ -554,6 +554,43 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; padding: 8px 0; }
 :root[data-theme="dark"] { --text-muted: #aaa79d; --axis: #858278; }
 .btn { min-height: 32px; }
 @media (max-width: 1000px) { .showcase { grid-template-columns: 1fr; gap: 18px; } .showcase h2 { max-width: none; } .scenario-strip { grid-template-columns: 1fr; gap: 16px; } }
+/* Dispatch laboratory */
+.lab-scenario {
+  font: 11.5px var(--font-mono);
+  color: var(--text-secondary);
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  border-left: 3px solid var(--series-2);
+}
+.lab-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+.lab-panel h3 { font-size: 12px; margin: 0 0 6px; font-weight: 700; }
+.lab-panel .plot-wrap { background: var(--surface-1); border: 1px solid var(--grid); }
+.lab-strip-head { margin-top: 18px; }
+.lab-strip-head h3 { font-size: 12px; margin: 0; font-weight: 700; }
+.lab-assumptions { font-size: 11px; color: var(--text-muted); margin: 8px 0 0; line-height: 1.55; }
+.lab-assumptions li { margin: 2px 0; }
+tr.lab-active td { background: var(--wash-2); }
+td.lab-best { font-weight: 700; color: var(--good); }
+.lab-status { font: 11px var(--font-mono); color: var(--text-secondary); }
+.lab-status.ok { color: var(--good); }
+.lab-status.bad { color: var(--critical); }
+.lab-verify { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); }
+.lab-verify-field { flex: 1 1 320px; }
+.lab-verify-field input { font: 11px var(--font-mono); }
+.selftest-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--grid); display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.selftest-list { flex: 1 1 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 14px; margin-top: 4px; }
+.selftest-row { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; color: var(--text-secondary); }
+.selftest-row .st-mark { font-family: var(--font-mono); font-weight: 700; flex: none; }
+.selftest-row.pass .st-mark { color: var(--good); }
+.selftest-row.fail .st-mark { color: var(--critical); }
+.selftest-row.fail { color: var(--critical); }
+.selftest-row .st-detail { color: var(--text-muted); font-size: 10.5px; }
+
+@media (max-width: 900px) {
+  .lab-panels { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 600px) {
   .viz-root { padding: 14px 12px 32px; }
   .topbar { gap: 12px; }

@@ -34,8 +34,28 @@ The wait penalty falls by 19.5%, while the sum of terminal delays increases. The
 - Imports a GTFS ZIP or a group of CSV files locally. Supports after-midnight service clocks, weekly calendars and date exceptions, direction and stop-pattern grouping, loop visits, and interpolation of untimed interior stops.
 - Verifies timestamps by formatting and parsing them back through the GTFS service-day clock. Both showcase layers pass **2,112 timestamp round trips and 5,313 timetable checks**.
 - Downloads a JSON dispatch report containing the measured results, active scenario, validation counts, and modeling assumptions.
+- Replays five deterministic dispatch strategies over one perturbation in the dispatch laboratory, computes the headway-control and signaling-capacity metrics for each, and exports a SHA-256 checksummed audit brief in JSON, CSV, and Markdown.
+- Shares the full workbench state - corridor, layer, intensity, scenario, time window, lab strategy, and perturbation - through strict `#rp=` URL bookmarks.
 
 Seven bundled examples cover named NEC, Houston METRORail, Caltrain, and CTA corridors. Their station sequences, mileposts, and coordinates are simplified teaching fixtures. They are not agency schedules, surveyed rail geometry, or live observations. Uploaded GTFS supplies the agency's planned stop times. Imported distance axes use cumulative haversine estimates between stops because GTFS `shape_dist_traveled` has no universal unit.
+
+## Dispatch laboratory
+
+The laboratory replays one shared deterministic queue model - a single track, no overtaking, a signaling separation floor at every station - under five operating strategies:
+
+| Strategy | Rule |
+| --- | --- |
+| Uncontrolled fixed-block baseline | Trains run as soon as the block ahead clears and bank timetable slack; early departures are permitted, so a compressed platoon stays compressed |
+| Schedule-based holding | No train departs a station before its booked time; early running becomes platform dwell |
+| Dynamic headway-equalization holding | Each train is held until its gap to its leader reaches the planned headway, capped per station |
+| Express skip-stop recovery | A train more than 15% of a headway late skips alternating local stations, saving dwell plus the stop penalty |
+| CBTC moving-block + dynamic holding | The equalization rule on a moving-block floor: shorter braking margin, less platform clearance |
+
+Three perturbations are bundled: a 90-second door hold, a mid-route passenger surge that lengthens dwell in a time and distance window, and the 15-minute platform incident. Metrics recomputed from the produced stop times include expected wait `E[W] = (H/2)(1 + CV_H^2)` with the population coefficient of variation, excess wait above even spacing, min-headway violations against the design floor `separation + longest dwell`, bunching and gap rates, recovery time to a ±25% headway band, peak line throughput `3600 / H_min`, station holds, skipped stops, and terminal delay. The braking margin is `v^2/(2*a_b) + v*t_r`; fixed-block adds block plus train clearing, moving-block adds train plus safety bubble.
+
+Both stringline panes show the same incident: the uncontrolled baseline beside the selected strategy, colored by terminal delay, with pass-through squares where express trips skip a station. A per-station CV strip compares baseline and selected spacing stability. The audit export carries the strategy metrics, signaling parameters, assumptions, and an unkeyed SHA-256 tamper-detection digest over a canonicalized JSON core; the digest honestly detects edits, it is not an HMAC or a signature. Paste a brief back into the page to verify it.
+
+Under the passenger surge on the CTA Red showcase, the measured outcome is: baseline headway CV 0.247 with 9 min-headway violations and 14.3 s excess wait; headway equalization reaches CV 0.158 with zero violations and 6.0 s excess wait at the cost of 11,857 s of station holds; express skip-stop restores in-band spacing fastest at 35.7 min. Under the 15-minute platform incident, equalization cuts violations from 29 to 2, and skip-stop recovers first at 38.2 min. Every figure is deterministic and recomputed on load.
 
 ## Mathematical choices
 
@@ -70,24 +90,24 @@ node --test tests/
 Verified locally on Node v26.8.1:
 
 ```text
- tests 202
+ tests 385
  suites 0
- pass 202
+ pass 385
  fail 0
  cancelled 0
  skipped 0
  todo 0
 ```
 
-There are **88 engine and import tests**, **97 adversarial hardening tests**, and **17 DOM runtime tests**. The hardening suite attacks the GTFS reader with forged ZIP structures (split markers, ZIP64 sentinels, entry-count lies, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV text, overnight service-day times past `25:00:00`, prototype-pollution keys, and stale-upload races. It also asserts the transit math directly: sample-sigma headway CV, population-variance excess wait, monotone stringlines on every corridor, follower separation and dwell invariants under the cascade model, formula-safe CSV export cells, and the exported SHA-256 report digest. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
+There are **88 engine and import tests**, **97 adversarial hardening tests**, **17 DOM runtime tests**, **164 dispatch-laboratory tests**, and **19 dispatch-lab DOM tests**. The hardening suite attacks the GTFS reader with forged ZIP structures (split markers, ZIP64 sentinels, entry-count lies, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV text, overnight service-day times past `25:00:00`, prototype-pollution keys, and stale-upload races. It also asserts the transit math directly: sample-sigma headway CV, population-variance excess wait, monotone stringlines on every corridor, follower separation and dwell invariants under the cascade model, formula-safe CSV export cells, and the exported SHA-256 report digest. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
 
 Syntax checks:
 
 ```sh
-for file in app.js engine.js corridors.js tests/*.js; do node --check "$file" || exit 1; done
+for file in app.js engine.js dispatch-lab.js corridors.js tests/*.js; do node --check "$file" || exit 1; done
 ```
 
-All seven JavaScript files passed. Tests generate ZIP bytes and feed fixtures in memory; no downloaded feed, runtime dependency, cache, or temporary artifact is required.
+All eight JavaScript files passed. Tests generate ZIP bytes and feed fixtures in memory; no downloaded feed, runtime dependency, cache, or temporary artifact is required.
 
 ## Engine API
 
@@ -118,13 +138,16 @@ console.log(report.headways.excessWaitSec, run.totalTerminalDelaySec);
 | File | Purpose |
 | --- | --- |
 | `engine.js` | GTFS CSV/ZIP parsing, clocks, simulation, reports, and validation |
+| `dispatch-lab.js` | Strategy simulator, signaling physics, wait metrics, audit exports, `#rp=` codec, self-tests |
 | `corridors.js` | Seven simplified synthetic corridor fixtures |
-| `app.js` | SVG rendering, inspections, presets, import handling, and report download |
+| `app.js` | SVG rendering, inspections, presets, import handling, lab views, and report downloads |
 | `index.html`, `style.css` | Accessible dispatch workspace and responsive palettes |
 | `tests/railpulse.test.js` | 88 numerical, parser, archive, and integration tests |
-| `tests/hardening.test.js` | 78 adversarial parser, math-invariant, export, and race tests |
+| `tests/hardening.test.js` | 97 adversarial parser, math-invariant, export, and race tests |
+| `tests/dispatch.test.js` | 164 physics, strategy, metric, audit, bookmark, and self-test checks |
 | `tests/dom-fixture.js` | shared deterministic DOM harness (not a test file) |
 | `tests/ui.test.js` | 17 DOM runtime and interaction tests |
+| `tests/lab-ui.test.js` | 19 dispatch-lab DOM tests |
 | `DEVPOST_UPGRADE.md` | Submission copy with measured evidence |
 
 MIT. See [LICENSE](LICENSE).

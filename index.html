@@ -139,6 +139,61 @@
         <p class="chart-note" id="stringlineNote">Dashed charcoal traces represent scheduled paths; solid colored traces represent observed or simulated runs encoded by terminal arrival delay. Station codes and mileposts are indexed directly on the vertical axes.</p>
       </section>
 
+      <!-- Dispatch laboratory: headway-control and signaling-capacity comparator -->
+      <section class="card chart-card" id="dispatchLab" aria-labelledby="labHeading">
+        <div class="chart-head">
+          <div>
+            <h2 id="labHeading">Dispatch laboratory: headway control and signaling capacity</h2>
+            <p class="chart-sub" id="labSub">Five deterministic operating strategies replayed over one perturbation on a shared single-track queue model with no overtaking. Every figure is recomputed from the produced stop times.</p>
+          </div>
+          <div class="chart-tools">
+            <label class="window-control">Perturbation <select id="labEvent"></select></label>
+            <label class="window-control">Strategy <select id="labStrategy"></select></label>
+          </div>
+        </div>
+        <p class="lab-scenario" id="labScenario"></p>
+        <div class="lab-panels">
+          <div class="lab-panel">
+            <h3 id="labBaselineTitle">Uncontrolled fixed-block baseline</h3>
+            <div class="plot-wrap"><svg id="labBaselineChart" viewBox="0 0 470 300" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Stringline chart, uncontrolled fixed-block baseline"></svg></div>
+          </div>
+          <div class="lab-panel">
+            <h3 id="labStrategyTitle">Selected strategy</h3>
+            <div class="plot-wrap"><svg id="labStrategyChart" viewBox="0 0 470 300" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Stringline chart, selected dispatch strategy"></svg></div>
+          </div>
+        </div>
+        <div class="chart-head lab-strip-head">
+          <div>
+            <h3>Headway stability by station</h3>
+            <p class="chart-sub">Population coefficient of variation of measured arrival headways at each station. Lower bars mean steadier spacing.</p>
+          </div>
+          <div class="chart-tools"><span class="legend" id="labCvLegend"></span></div>
+        </div>
+        <div class="plot-wrap"><svg id="labCvChart" viewBox="0 0 980 190" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Headway coefficient of variation by station for baseline versus selected strategy"></svg></div>
+        <div class="table-view always" tabindex="0" id="labTable" aria-label="Strategy comparison metrics"></div>
+        <p class="chart-note" id="labAssumptionNote"></p>
+        <div class="verification-bar">
+          <button class="btn" id="labExportJson" type="button">Download audit JSON</button>
+          <button class="btn" id="labExportCsv" type="button">Download audit CSV</button>
+          <button class="btn" id="labExportMd" type="button">Download audit Markdown</button>
+          <button class="btn ghost" id="labBookmark" type="button">Copy share link</button>
+          <span class="lab-status" id="labStatus" role="status" aria-live="polite"></span>
+        </div>
+        <div class="lab-verify">
+          <label class="control lab-verify-field">
+            <span class="control-label">Paste an audit brief to verify its digest</span>
+            <input id="labVerifyInput" type="text" spellcheck="false" autocomplete="off" placeholder='{"generatedBy":"RailPulse dispatch laboratory", ...}'>
+          </label>
+          <button class="btn" id="labVerifyBtn" type="button">Verify digest</button>
+          <span class="lab-status" id="labVerifyStatus" role="status" aria-live="polite"></span>
+        </div>
+        <div class="selftest-block">
+          <button class="btn" id="labSelfTests" type="button">Run self-tests</button>
+          <span class="lab-status" id="selfTestSummary" role="status" aria-live="polite"></span>
+          <div class="selftest-list" id="selfTestList"></div>
+        </div>
+      </section>
+
       <!-- Corridor geography and station delay strip -->
       <section class="card chart-card" aria-label="Corridor alignment and station dwell">
         <div class="chart-head">
@@ -248,6 +303,7 @@
 
   <script src="corridors.js"></script>
   <script src="engine.js"></script>
+  <script src="dispatch-lab.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

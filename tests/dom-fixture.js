@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-function boot(width = 1180, loading = false) {
+function boot(width = 1180, loading = false, initialHash = "") {
   const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
   const ids = new Map(), downloads = [], revoked = [], blobs = [];
   let doc;
@@ -63,18 +63,20 @@ function boot(width = 1180, loading = false) {
     if (stack.length) stack[stack.length - 1].appendChild(node);
     if (!voidTags.has(tag) && !text.endsWith("/>")) stack.push(node);
   }
-  const colors = { "--div-mid": "#7d7970", "--div-cool": "#1b4d89", "--div-warm": "#c8102e", "--series-1": "#1b4d89", "--series-2": "#c8102e", "--series-3": "#1e6b47", "--axis": "#8c887e", "--warning": "#965407", "--rule-heavy": "#141413" };
-  const context = { document: doc, Event: FixtureEvent, Blob, TextDecoder, TextEncoder, ArrayBuffer, Uint8Array, Uint16Array, Uint32Array, Int32Array, DataView, setTimeout: fn => { fn(); return 1; }, URL: { createObjectURL: blob => { blobs.push(blob); return "blob:dispatch"; }, revokeObjectURL: url => revoked.push(url) }, getComputedStyle: () => ({ getPropertyValue: name => colors[name] || "#141413" }), innerWidth: width, innerHeight: 800, console };
+  const colors = { "--div-mid": "#7d7970", "--div-cool": "#1b4d89", "--div-warm": "#c8102e", "--series-1": "#1b4d89", "--series-2": "#c8102e", "--series-3": "#1e6b47", "--axis": "#8c887e", "--warning": "#965407", "--rule-heavy": "#141413", "--good": "#1e6b47" };
+  const location = { hash: initialHash || "", href: "http://localhost/index.html" + (initialHash || ""), origin: "http://localhost", pathname: "/index.html" };
+  const history = { replaceState: (_s, _t, url) => { if (typeof url === "string") { const i = url.indexOf("#"); location.hash = i >= 0 ? url.slice(i) : ""; } } };
+  const context = { document: doc, Event: FixtureEvent, Blob, TextDecoder, TextEncoder, ArrayBuffer, Uint8Array, Uint16Array, Uint32Array, Int32Array, DataView, setTimeout: fn => { fn(); return 1; }, URL: { createObjectURL: blob => { blobs.push(blob); return "blob:dispatch"; }, revokeObjectURL: url => revoked.push(url) }, getComputedStyle: () => ({ getPropertyValue: name => colors[name] || "#141413" }), innerWidth: width, innerHeight: 800, console, location, history };
   context.window = context; context.globalThis = context;
   vm.createContext(context);
-  for (const script of ["corridors.js", "engine.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", script), "utf8"), context, { filename: script });
+  for (const script of ["corridors.js", "engine.js", "dispatch-lab.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", script), "utf8"), context, { filename: script });
   if (loading) doc.dispatchEvent(new FixtureEvent("DOMContentLoaded"));
-  return { context, doc, ids, Event: FixtureEvent, downloads, revoked, blobs };
+  return { context, doc, ids, Event: FixtureEvent, downloads, revoked, blobs, location, history };
 }
 function change(h, id, value) { const node = h.ids.get(id); node.value = value; node.dispatchEvent(new h.Event("change")); }
 function marks(h, id) { const out = []; const walk = n => { out.push(n); n.children.forEach(walk); }; walk(h.ids.get(id)); return out; }
 function assertFiniteSvg(h) {
-  for (const id of ["stringlineChart", "corridorMap", "headwayChart", "todChart", "delayChart"]) for (const n of marks(h, id)) {
+  for (const id of ["stringlineChart", "corridorMap", "headwayChart", "todChart", "delayChart", "labBaselineChart", "labStrategyChart", "labCvChart"]) for (const n of marks(h, id)) {
     for (const [key, value] of Object.entries(n.attrs)) if (["d", "x", "y", "x1", "x2", "y1", "y2", "width", "height", "cx", "cy", "r", "points"].includes(key)) assert.ok(!/NaN|Infinity|undefined/.test(value), id + " " + key + "=" + value);
     if (n.attrs.width) assert.ok(Number(n.attrs.width) >= 0, "nonnegative width");
   }
