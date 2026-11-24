@@ -6,6 +6,7 @@
   <title>RailPulse | Graphic Timetable and Headway Dispatch Workbench</title>
   <meta name="description" content="RailPulse parses GTFS static timetables and reproducible disruption scenarios to plot Marey stringline diagrams, headway regularity, vehicle bunching, station dwell, and cascade delay offline in your browser.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -35,7 +36,6 @@
     <section class="showcase" aria-labelledby="showcaseHeading">
       <div>
         <h2 id="showcaseHeading">One stopped train. Delays down the line.</h2>
-        <p>Trace a platform incident through the timetable, then restore train spacing. Three scenarios. One click each.</p>
       </div>
       <div class="presets" role="group" aria-label="Showcase scenarios">
         <button class="preset" id="presetSmooth" type="button" data-preset="smooth" aria-pressed="false"><span class="preset-number">1</span><strong>Smooth rush</strong><small>Establish the baseline</small></button>
@@ -57,6 +57,10 @@
           <option value="scheduled">Scheduled timetable only</option>
         </select>
       </label>
+      <label class="control file-control">
+        <span class="control-label">GTFS static (.zip or CSV files)</span>
+        <input id="gtfsInput" type="file" accept=".zip,.txt,.csv" multiple>
+      </label>
       <label class="control">
         <span class="control-label">Disruption regime</span>
         <select id="intensitySelect">
@@ -66,10 +70,6 @@
           <option value="1.8">Heavy (1.8x)</option>
           <option value="2.8">Severe (2.8x)</option>
         </select>
-      </label>
-      <label class="control">
-        <span class="control-label">GTFS static (.zip or CSV files)</span>
-        <input id="gtfsInput" type="file" accept=".zip,.txt,.csv" multiple>
       </label>
       <label class="control">
         <span class="control-label">Service date (YYYYMMDD)</span>
@@ -126,7 +126,6 @@
         <div class="chart-head">
           <div>
             <h2>Marey graphic timetable (time-distance stringline)</h2>
-            <p class="chart-sub">Horizontal rules mark stations by cumulative route milepost. Sloped traces follow individual trains across the service day. Converging trajectories indicate vehicle bunching and overtakes.</p>
           </div>
           <div class="chart-tools">
             <label class="window-control">Time window <select id="timeWindow"><option value="focus">First 26 trains</option><option value="morning">06:00 to 10:00</option><option value="midday">11:00 to 15:00</option><option value="evening">16:00 to 20:00</option><option value="full">Full service day</option></select></label>
@@ -145,7 +144,6 @@
         <div class="chart-head">
           <div>
             <h2 id="labHeading">Dispatch laboratory: headway control and signaling capacity</h2>
-            <p class="chart-sub" id="labSub">Five deterministic operating strategies replayed over one perturbation on a shared single-track queue model with no overtaking. Every figure is recomputed from the produced stop times.</p>
           </div>
           <div class="chart-tools">
             <label class="window-control">Perturbation <select id="labEvent"></select></label>
@@ -166,11 +164,11 @@
         <div class="chart-head lab-strip-head">
           <div>
             <h3>Headway stability by station</h3>
-            <p class="chart-sub">Population coefficient of variation of measured arrival headways at each station. Lower bars mean steadier spacing.</p>
           </div>
           <div class="chart-tools"><span class="legend" id="labCvLegend"></span></div>
         </div>
         <div class="plot-wrap"><svg id="labCvChart" viewBox="0 0 980 190" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Headway coefficient of variation by station for baseline versus selected strategy"></svg></div>
+        <p class="chart-note">Population coefficient of variation of measured arrival headways at each station. Lower bars mean steadier spacing.</p>
         <div class="table-view always" tabindex="0" id="labTable" aria-label="Strategy comparison metrics"></div>
         <p class="chart-note" id="labAssumptionNote"></p>
         <div class="verification-bar">
@@ -200,13 +198,12 @@
         <div class="chart-head">
           <div>
             <h2>Corridor alignment and station delay</h2>
-            <p class="chart-sub" id="mapSub">Approximate station alignment from the selected corridor.</p>
           </div>
         </div>
         <div class="map-wrap">
           <svg id="corridorMap" viewBox="0 0 980 240" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Corridor station alignment"></svg>
         </div>
-        <p class="chart-note">Station marker color encodes mean arrival delay (neutral: on schedule, blue: early, red: delayed). Marker radius scales with scheduled station dwell.</p>
+        <p class="chart-note"><span id="mapSub">Approximate station alignment from the selected corridor.</span> Station marker color encodes mean arrival delay (neutral: on schedule, blue: early, red: delayed). Marker radius scales with scheduled station dwell.</p>
       </section>
 
       <details class="analytics"><summary>Explore headways, station dwell, and the event ledger</summary>
@@ -216,7 +213,6 @@
           <div class="chart-head">
             <div>
               <h2>Headway ratio distribution</h2>
-              <p class="chart-sub">Observed inter-train gaps normalized by scheduled headway (bunching &le; 0.5x, gap &ge; 1.5x).</p>
             </div>
             <div class="chart-tools">
               <span class="legend" id="hwLegend"></span>
@@ -224,6 +220,7 @@
             </div>
           </div>
           <div class="plot-wrap"><svg id="headwayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Headway distribution histogram"></svg></div>
+          <p class="chart-note">Observed inter-train gaps normalized by scheduled headway (bunching &le; 0.5x, gap &ge; 1.5x).</p>
           <div class="table-view" tabindex="0" id="hwTable" hidden></div>
         </section>
 
@@ -231,7 +228,6 @@
           <div class="chart-head">
             <div>
               <h2>Hourly headway profile</h2>
-              <p class="chart-sub">Mean and 90th-percentile headway by hour of day compared against scheduled headway.</p>
             </div>
             <div class="chart-tools">
               <span class="legend" id="todLegend"></span>
@@ -239,6 +235,7 @@
             </div>
           </div>
           <div class="plot-wrap"><svg id="todChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Headway by time of day"></svg></div>
+          <p class="chart-note">Mean and 90th-percentile headway by hour of day compared against scheduled headway.</p>
           <div class="table-view" tabindex="0" id="todTable" hidden></div>
         </section>
       </div>
@@ -249,7 +246,6 @@
           <div class="chart-head">
             <div>
               <h2>Station dwell comparison</h2>
-              <p class="chart-sub">Mean observed platform dwell versus scheduled stop duration, ranked by overrun.</p>
             </div>
             <div class="chart-tools">
               <span class="legend" id="dwellLegend"></span>
@@ -257,13 +253,13 @@
             </div>
           </div>
           <div class="plot-wrap"><div id="dwellChart" class="bar-list" role="group" aria-label="Dwell by station"></div></div>
+          <p class="chart-note">Mean observed platform dwell versus scheduled stop duration, ranked by overrun.</p>
           <div class="table-view" tabindex="0" id="dwellTable" hidden></div>
         </section>
         <section class="card chart-card" aria-label="Delay by station">
           <div class="chart-head">
             <div>
               <h2>Delay progression along route</h2>
-              <p class="chart-sub">Mean arrival offset from schedule at each station ordered by cumulative milepost.</p>
             </div>
             <div class="chart-tools">
               <span class="legend" id="delayLegend"></span>
@@ -271,6 +267,7 @@
             </div>
           </div>
           <div class="plot-wrap"><svg id="delayChart" viewBox="0 0 480 280" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Delay along the line"></svg></div>
+          <p class="chart-note">Mean arrival offset from schedule at each station ordered by cumulative milepost.</p>
           <div class="table-view" tabindex="0" id="delayTable" hidden></div>
         </section>
       </div>
@@ -280,11 +277,11 @@
         <div class="chart-head">
           <div>
             <h2>Bunching and service gap log</h2>
-            <p class="chart-sub">Most severe compressed headways (bunches) and extended headways (gaps) recorded across all stations.</p>
           </div>
           <button class="btn tiny toggle-table" type="button" data-table="eventTable">Hide table</button>
         </div>
         <div class="table-view always" tabindex="0" id="eventTable"></div>
+        <p class="chart-note">Most severe compressed headways (bunches) and extended headways (gaps) recorded across all stations.</p>
       </section>
 
       </details>

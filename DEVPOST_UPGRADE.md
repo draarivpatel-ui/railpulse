@@ -42,9 +42,9 @@ The laboratory surfaces honest tradeoffs rather than one declared winner. Under 
 
 ## Verification numbers
 
-- **385 tests passed, 0 failed, 0 skipped**, verified on Node v26.8.1 with `node --test tests/`.
+- **386 tests passed, 0 failed, 0 skipped**, verified on Node v26.8.1 with `node --test tests/`.
 - **88 engine/import tests**, including archive corruption, three DEFLATE block types, service calendars, direction and pattern groups, loop trips, interpolation, station-hold dwell attribution, and manually derived wait math.
-- **97 adversarial hardening tests**, attacking the ZIP reader with forged archives (entry-count lies, split and ZIP64 markers, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV, overnight service-day times, prototype-pollution keys, and stale-upload races, plus direct math checks: sample-sigma headway CV, population-variance excess wait, monotone stringlines, cascade separation and dwell invariants, formula-safe CSV cells, and the SHA-256 export digest.
+- **98 adversarial hardening tests**, attacking the ZIP reader with forged archives (entry-count lies, split and ZIP64 markers, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV, overnight service-day times, prototype-pollution keys, and stale-upload races, plus direct math checks: sample-sigma headway CV, population-variance excess wait, monotone stringlines, cascade separation and dwell invariants, formula-safe CSV cells, and the SHA-256 export digest.
 - **164 dispatch-laboratory tests**, covering the braking formulas, all five strategies under three perturbations, the no-overtake and separation-floor safety invariants, wait and recovery metrics on manual recomputes, digest verification and forgery, CSV injection safety, and the strict bookmark codec.
 - **36 DOM runtime tests** (17 core plus 19 lab), evaluating the actual scripts and markup: controls, strategy tables, both stringline panes, the CV strip, audit downloads and digest verification, `#rp=` boot restore, self-test panel output, GTFS upload, and theme persistence.
 - **18 in-page self-tests pass**, re-proving the wait formula including the CV_H = 0 case, braking non-negativity and monotonicity, the zero-overtake invariant, CSV escaping, tamper detection, and five FIPS 180-4 SHA-256 known answers inside the real page.

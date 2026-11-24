@@ -1100,7 +1100,7 @@
     drawLabCv(lab);
     renderLabTable(lab);
     var a = lab.assumptions;
-    $("labAssumptionNote").textContent = a[0] + " " + a[4] + " The audit digest is an unkeyed SHA-256 tamper-detection checksum, not authentication.";
+    $("labAssumptionNote").textContent = "Five deterministic operating strategies replay one perturbation on a shared single-track queue model with no overtaking. Every figure is recomputed from the produced stop times. " + a[0] + " " + a[4] + " The audit digest is an unkeyed SHA-256 tamper-detection checksum, not authentication.";
   }
 
   /* ---------------------------------------------------------------- *
