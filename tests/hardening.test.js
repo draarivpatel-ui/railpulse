@@ -1301,3 +1301,15 @@ test("trips.txt without route_id warns instead of silently dropping", async () =
   const res = await E.parseGtfs({ files: files, date: "20261106" });
   assert.ok(res.warnings.some((w) => /route_id/.test(w)));
 });
+
+test("the page ships a restrictive Content-Security-Policy", () => {
+  const html = require("node:fs").readFileSync(require("node:path").join(__dirname, "../index.html"), "utf8");
+  const m = html.match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
+  assert.ok(m, "index.html carries a CSP meta");
+  const csp = m[1];
+  assert.ok(/default-src 'none'/.test(csp), "default-src denies everything by default");
+  assert.ok(/script-src 'self'/.test(csp), "scripts stay same origin only");
+  assert.ok(!/unsafe-inline|unsafe-eval/.test(csp), "no inline script or eval escape hatch");
+  assert.ok(/connect-src 'none'/.test(csp), "no network exfil channel");
+  assert.ok(/object-src 'none'|default-src 'none'/.test(csp), "plugins denied");
+});
