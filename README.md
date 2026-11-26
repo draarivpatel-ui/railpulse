@@ -90,16 +90,16 @@ node --test tests/
 Verified locally on Node v26.8.1:
 
 ```text
- tests 392
+ tests 394
  suites 0
- pass 392
+ pass 394
  fail 0
  cancelled 0
  skipped 0
  todo 0
 ```
 
-There are **88 engine and import tests**, **98 adversarial hardening tests**, **17 DOM runtime tests**, **164 dispatch-laboratory tests**, and **19 dispatch-lab DOM tests**. The hardening suite attacks the GTFS reader with forged ZIP structures (split markers, ZIP64 sentinels, entry-count lies, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV text, overnight service-day times past `25:00:00`, prototype-pollution keys, and stale-upload races. It also asserts the transit math directly: sample-sigma headway CV, population-variance excess wait, monotone stringlines on every corridor, follower separation and dwell invariants under the cascade model, formula-safe CSV export cells, and the exported SHA-256 report digest. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
+There are **88 engine and import tests**, **99 adversarial hardening tests**, **17 DOM runtime tests**, **165 dispatch-laboratory tests**, **19 dispatch-lab DOM tests**, and **6 print-accessibility tests**. The hardening suite attacks the GTFS reader with forged ZIP structures (split markers, ZIP64 sentinels, entry-count lies, encrypted members, CRC corruption, non-UTF-8 names), hostile CSV text, overnight service-day times past `25:00:00`, prototype-pollution keys, and stale-upload races. It also asserts the transit math directly: sample-sigma headway CV, population-variance excess wait, monotone stringlines on every corridor, follower separation and dwell invariants under the cascade model, formula-safe CSV export cells, and the exported SHA-256 report digest. The DOM fixture evaluates the actual browser scripts against the actual markup, drives control events, checks startup timing, validates inert imported labels and upload cancellation, and exercises all seven corridors across five time windows at a 320-pixel viewport. It checks finite SVG coordinates and accessibility bindings. It does not replace visual inspection in a browser.
 
 Syntax checks:
 
@@ -143,11 +143,12 @@ console.log(report.headways.excessWaitSec, run.totalTerminalDelaySec);
 | `app.js` | SVG rendering, inspections, presets, import handling, lab views, and report downloads |
 | `index.html`, `style.css` | Accessible dispatch workspace and responsive palettes |
 | `tests/railpulse.test.js` | 88 numerical, parser, archive, and integration tests |
-| `tests/hardening.test.js` | 98 adversarial parser, math-invariant, export, and race tests |
-| `tests/dispatch.test.js` | 164 physics, strategy, metric, audit, bookmark, and self-test checks |
+| `tests/hardening.test.js` | 99 adversarial parser, math-invariant, export, and race tests |
+| `tests/dispatch.test.js` | 165 physics, strategy, metric, audit, bookmark, and self-test checks |
 | `tests/dom-fixture.js` | shared deterministic DOM harness (not a test file) |
 | `tests/ui.test.js` | 17 DOM runtime and interaction tests |
 | `tests/lab-ui.test.js` | 19 dispatch-lab DOM tests |
+| `tests/print-accessibility.test.js` | 6 print and accessibility regression tests |
 | `DEVPOST_UPGRADE.md` | Submission copy with measured evidence |
 
 MIT. See [LICENSE](LICENSE).

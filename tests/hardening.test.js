@@ -1313,3 +1313,8 @@ test("the page ships a restrictive Content-Security-Policy", () => {
   assert.ok(/connect-src 'none'/.test(csp), "no network exfil channel");
   assert.ok(/object-src 'none'|default-src 'none'/.test(csp), "plugins denied");
 });
+
+test("csvCell guards formula triggers behind invisible Unicode format characters", () => {
+  assert.equal(E.csvCell("\u200B=cmd"), "'\u200B=cmd");
+  assert.equal(E.csvCell("\uFEFF+cmd"), "'\uFEFF+cmd");
+});

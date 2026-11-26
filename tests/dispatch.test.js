@@ -1286,3 +1286,12 @@ test("self-test battery includes the zero-overtake invariant check", () => {
   const st = L.runSelfTests().find(r => r.id === "no-overtake");
   assert.ok(st && st.pass);
 });
+
+test("audit verification treats a prototype key as signed data instead of dropping it", () => {
+  const core = { a: 1 };
+  const digest = E.sha256Hex(L.canonicalize(core));
+  const clean = { a: 1, integrity: { digest } };
+  const hostile = JSON.parse('{"a":1,"__proto__":{"hidden":true},"integrity":{"digest":"' + digest + '"}}');
+  assert.equal(L.verifyAudit(clean).valid, true);
+  assert.equal(L.verifyAudit(hostile).valid, false);
+});

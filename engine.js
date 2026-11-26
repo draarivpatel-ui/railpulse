@@ -1622,7 +1622,7 @@
   function csvCell(value) {
     var s = value == null ? "" : String(value);
     if (typeof value === "number" && !isFiniteNum(value)) return "";
-    if (typeof value !== "number" && /^\s*[=+\-@']/.test(s)) s = "'" + s;
+    if (typeof value !== "number" && /^[\s\u0085\u180E\u200B\u200C\u200D\u2060\uFEFF]*[=+\-@'\t\r]/.test(s)) s = "'" + s;
     if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
     return s;
   }

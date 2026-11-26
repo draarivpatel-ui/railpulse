@@ -713,7 +713,7 @@
     if (!integrity || typeof integrity.digest !== "string" || !/^[0-9a-f]{64}$/.test(integrity.digest)) {
       return { valid: false, reason: "Missing or malformed integrity digest" };
     }
-    var core = {};
+    var core = Object.create(null);
     for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj, k) && k !== "integrity") core[k] = obj[k];
     var recomputed;
     try { recomputed = E.sha256Hex(canonicalize(core)); } catch (err2) { return { valid: false, reason: "Could not recompute digest" }; }
