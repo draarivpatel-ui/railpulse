@@ -381,6 +381,10 @@ svg { width: 100%; height: auto; display: block; overflow: visible; }
 /* Ranked horizontal station dwell bars */
 .bar-list { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
 .bar-row {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
   display: grid;
   grid-template-columns: 148px 1fr 64px;
   align-items: center;
@@ -624,3 +628,44 @@ td.lab-best { font-weight: 700; color: var(--good); }
 
 .brand-mark { width: 32px; flex: none; }
 .brand-mark svg { width: 28px; height: 28px; }
+
+
+/* Craft audit accessibility and print fixes */
+:root { --border: #6e6c65; }
+:root[data-theme="dark"] { --border: #858278; }
+.btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.control select, .control input[type="text"], .control input[type="file"],
+.window-control select, .train-inspector select {
+  min-height: 44px;
+}
+summary { min-height: 44px; border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; display: inline-flex; align-items: center; }
+input::placeholder { color: var(--text-secondary); opacity: 1; }
+
+@media print {
+  @page { margin: 12mm; }
+  html, body { background: #ffffff; color: #000000; }
+  .viz-root { max-width: none; padding: 0; }
+  .skip-link, .topbar-actions, .presets, .controls, button, input, select, textarea, summary, a[href],
+  .primary-sheet, #dispatchLab, section[aria-label="Corridor alignment and station dwell"], .analytics {
+    display: none !important;
+  }
+  .topbar { border-bottom-color: #000000; padding-bottom: 8mm; }
+  .brand h1, .showcase h2, .card, .scenario-strip { color: #000000; }
+  .showcase { display: block; padding: 0 0 6mm; }
+  .showcase h2 { max-width: none; font-size: 20pt; margin: 0; }
+  .scenario-strip, .card {
+    background: #ffffff;
+    border-color: #000000;
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .overview { grid-template-columns: 1fr 1fr; }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .verification { color: #000000; }
+}

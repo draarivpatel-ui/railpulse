@@ -90,9 +90,9 @@ node --test tests/
 Verified locally on Node v26.8.1:
 
 ```text
- tests 386
+ tests 392
  suites 0
- pass 386
+ pass 392
  fail 0
  cancelled 0
  skipped 0

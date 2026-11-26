@@ -915,7 +915,7 @@
     clear(svg);
     var data = E.buildStringline(E.withObserved(base, sim.observedTrips), { timeRange: domain });
     var stops = data.stops;
-    var W = 470, H = 300, padL = 66, padR = 14, padT = 24, padB = 30;
+    var W = 470, H = 300, padL = 66, padR = 36, padT = 24, padB = 30;
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var x = scale(domain[0], domain[1], padL, W - padR);
     var mMax = data.milesDomain[1] || 1;
