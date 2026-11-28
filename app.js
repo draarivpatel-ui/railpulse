@@ -363,7 +363,7 @@
     var lats = stops.map(function (s) { return s.lat; });
     var lons = stops.map(function (s) { return s.lon; });
     var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
-    var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
+    var minLon = Math.min.apply(null, lons);
 
     var midLat = (minLat + maxLat) / 2;
     var kx = Math.cos(midLat * Math.PI / 180);
